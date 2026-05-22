@@ -1,0 +1,66 @@
+# XcodeGen 配置：`xcodegen` 即可生成 Inkling.xcodeproj
+name: Inkling
+options:
+  bundleIdPrefix: com.wuyupeng
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    DEVELOPMENT_TEAM: ""      # 填你的 Apple Dev Team ID
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 2.0.0
+
+targets:
+  Inkling:
+    type: application
+    platform: macOS
+    sources:
+      - path: Inkling
+        excludes:
+          - "Resources/bridge/**"  # bridge 通过 Copy Files 阶段加进来
+    resources:
+      - path: Inkling/Resources
+    dependencies:
+      - package: KeyboardShortcuts
+    info:
+      path: Inkling/Info.plist
+      properties:
+        CFBundleName: Inkling
+        CFBundleDisplayName: Inkling
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSUIElement: true   # 不在 Dock 显示，仅状态栏
+        NSAppleEventsUsageDescription: "Inkling 需要读取你选中的文本以便发给 Claude 解释。"
+        NSAccessibilityUsageDescription: "Inkling 需要 Accessibility 权限来读取当前选中的文本。"
+    entitlements:
+      path: Inkling/Inkling.entitlements
+      properties:
+        com.apple.security.app-sandbox: false   # 划词工具需要 AX，沙盒下做不到
+        com.apple.security.network.client: true
+    preBuildScripts:
+      - name: Build Node Bridge
+        script: |
+          set -e
+          cd "$SRCROOT/bridge"
+          if [ ! -d node_modules ]; then npm install; fi
+          npm run build
+        outputFiles:
+          - $(SRCROOT)/bridge/dist/index.js
+    postBuildScripts:
+      - name: Embed Node Bridge
+        script: |
+          set -e
+          DEST="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/Resources/bridge"
+          mkdir -p "$DEST"
+          rsync -a --delete "$SRCROOT/bridge/dist/" "$DEST/dist/"
+          rsync -a "$SRCROOT/bridge/package.json" "$DEST/"
+          rsync -a "$SRCROOT/bridge/node_modules/" "$DEST/node_modules/"

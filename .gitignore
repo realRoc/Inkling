@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Xcode
+*.xcodeproj/
+!*.xcodeproj/project.pbxproj
+xcuserdata/
+*.xcworkspace/
+DerivedData/
+build/
+
+# XcodeGen 生成物（保留 project.yml，忽略 xcodeproj）
+Inkling.xcodeproj/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# Node
+node_modules/
+bridge/dist/
+*.log
+
+# 本地配置
+.env
+.env.local

@@ -1,0 +1,20 @@
+{
+  "name": "inkling-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node sidecar that wraps @anthropic-ai/claude-agent-sdk and talks to Inkling.app over stdio JSON.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}
