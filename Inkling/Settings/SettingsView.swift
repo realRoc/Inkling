@@ -3,7 +3,7 @@ import KeyboardShortcuts
 
 struct SettingsView: View {
     @State private var preferences: String = PreferenceStore.readPreferences()
-    @State private var model: String = "claude-haiku-4-5"
+    @AppStorage(AppSettings.modelKey) private var model: String = AppSettings.defaultModel
 
     var body: some View {
         TabView {

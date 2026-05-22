@@ -44,6 +44,10 @@ final class SelectionWatcher {
         defer { dragStart = nil }
         guard let start = dragStart else { return }
 
+        // 用户在菜单栏关掉了划词，直接早返。事件 monitor 仍然挂着，
+        // 这样切回启用时不用重新注册 AX 监听。
+        guard AppSettings.watcherEnabled else { return }
+
         // 单纯点击不算划词
         guard hypot(upPoint.x - start.x, upPoint.y - start.y) >= minDragDistance else { return }
 

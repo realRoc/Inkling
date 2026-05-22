@@ -77,7 +77,7 @@ final class BridgeProcess {
         queue.async {
             self.handlers[sessionId] = handler
             if self.createdSessions.insert(sessionId).inserted {
-                self.write(.createSession(id: sessionId, model: "claude-haiku-4-5", systemPrompt: nil))
+                self.write(.createSession(id: sessionId, model: AppSettings.model, systemPrompt: nil))
             }
             self.write(.send(id: sessionId, text: text))
         }
