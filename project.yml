@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "13.0"
-    DEVELOPMENT_TEAM: ""      # 填你的 Apple Dev Team ID
+    DEVELOPMENT_TEAM: "SK8V5TAN28"   # Yumi Zhang
     CODE_SIGN_STYLE: Automatic
     ENABLE_HARDENED_RUNTIME: YES
 
@@ -59,8 +59,23 @@ targets:
       - name: Embed Node Bridge
         script: |
           set -e
+          # 在 build target 的临时目录里装一份 prod-only deps，避免把 TypeScript
+          # 和 @types/* 等 ~150MB devDependencies 也塞进 App bundle。
+          PROD_DIR="$TARGET_TEMP_DIR/bridge-prod"
+          mkdir -p "$PROD_DIR"
+          cp "$SRCROOT/bridge/package.json" "$PROD_DIR/"
+          [ -f "$SRCROOT/bridge/package-lock.json" ] && cp "$SRCROOT/bridge/package-lock.json" "$PROD_DIR/"
+          (
+            cd "$PROD_DIR"
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev --no-audit --no-fund
+            else
+              npm install --omit=dev --no-audit --no-fund
+            fi
+          )
+
           DEST="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/Resources/bridge"
           mkdir -p "$DEST"
-          rsync -a --delete "$SRCROOT/bridge/dist/" "$DEST/dist/"
-          rsync -a "$SRCROOT/bridge/package.json" "$DEST/"
-          rsync -a "$SRCROOT/bridge/node_modules/" "$DEST/node_modules/"
+          rsync -a --delete "$SRCROOT/bridge/dist/"        "$DEST/dist/"
+          rsync -a                "$PROD_DIR/package.json" "$DEST/"
+          rsync -a --delete "$PROD_DIR/node_modules/"      "$DEST/node_modules/"
