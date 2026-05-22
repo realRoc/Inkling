@@ -31,7 +31,9 @@ enum SelectionReader {
             kAXSelectedTextAttribute as CFString,
             &selected
         )
-        guard selErr == .success, let text = selected as? String, !text.isEmpty else {
+        guard selErr == .success,
+              let text = selected as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 
@@ -39,36 +41,60 @@ enum SelectionReader {
     }
 
     // MARK: - Pasteboard 回退
+    //
+    // 思路：
+    // 1. 等用户从快捷键里松开 ⌘/⇧/⌥/⌃（否则 Cmd+C 会被污染成 ⌘⇧C 等）
+    // 2. 备份当前 pasteboard
+    // 3. clear → sendCommandC → 用 changeCount 检测「真的发生过一次新的写入」
+    // 4. 读出新内容；若 changeCount 没增加，说明 Cmd+C 没生效，返回 nil（避免把用户的旧剪贴板当成"选中文本"）
+    // 5. 恢复 pasteboard
 
     private static func readViaPasteboard() -> Selection? {
+        waitForModifiersToClear(timeout: 0.4)
+
         let pasteboard = NSPasteboard.general
-        let oldItems = pasteboard.pasteboardItems?.map { item -> [NSPasteboard.PasteboardType: Data] in
-            var snapshot: [NSPasteboard.PasteboardType: Data] = [:]
-            for type in item.types {
-                if let data = item.data(forType: type) { snapshot[type] = data }
-            }
-            return snapshot
-        }
+        let backup = backupPasteboard(pasteboard)
+
+        let baseline = pasteboard.changeCount
+        pasteboard.clearContents()
+        let afterClear = pasteboard.changeCount
 
         sendCommandC()
-        // 等 pasteboard 更新
-        Thread.sleep(forTimeInterval: 0.08)
 
-        let text = pasteboard.string(forType: .string)
-
-        // 恢复剪贴板
-        if let oldItems {
-            pasteboard.clearContents()
-            let restored = oldItems.map { dict -> NSPasteboardItem in
-                let item = NSPasteboardItem()
-                for (type, data) in dict { item.setData(data, forType: type) }
-                return item
+        // 轮询等待 Cmd+C 真的把数据写进 pasteboard
+        let deadline = Date().addingTimeInterval(0.5)
+        var copied = false
+        while Date() < deadline {
+            if pasteboard.changeCount > afterClear {
+                copied = true
+                break
             }
-            pasteboard.writeObjects(restored)
+            Thread.sleep(forTimeInterval: 0.02)
         }
 
-        guard let text, !text.isEmpty else { return nil }
+        let text: String? = copied ? pasteboard.string(forType: .string) : nil
+
+        restorePasteboard(pasteboard, backup: backup, baseline: baseline)
+
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
         return Selection(text: text, sourceApp: NSWorkspace.shared.frontmostApplication?.localizedName)
+    }
+
+    /// 等所有按住的 modifier 松开。最长等 timeout 秒。
+    /// 必要时主线程 sleep —— 但 panel 还没显示，体感上是「快捷键按下 → 短暂等待 → 弹窗」。
+    private static func waitForModifiersToClear(timeout: TimeInterval) {
+        let modifiersToWatch: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if NSEvent.modifierFlags.intersection(modifiersToWatch).isEmpty {
+                // 让事件队列再 settle 一会儿
+                Thread.sleep(forTimeInterval: 0.02)
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
     }
 
     private static func sendCommandC() {
@@ -79,5 +105,36 @@ enum SelectionReader {
         up?.flags = .maskCommand
         down?.post(tap: .cghidEventTap)
         up?.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Pasteboard 备份/恢复
+
+    private struct PasteboardBackup {
+        let items: [[NSPasteboard.PasteboardType: Data]]
+    }
+
+    private static func backupPasteboard(_ pb: NSPasteboard) -> PasteboardBackup {
+        let items = pb.pasteboardItems?.map { item -> [NSPasteboard.PasteboardType: Data] in
+            var dict: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in item.types {
+                if let data = item.data(forType: type) { dict[type] = data }
+            }
+            return dict
+        } ?? []
+        return PasteboardBackup(items: items)
+    }
+
+    private static func restorePasteboard(_ pb: NSPasteboard, backup: PasteboardBackup, baseline: Int) {
+        // 只在 pasteboard 实际被我们污染过时才恢复
+        guard pb.changeCount != baseline else { return }
+        pb.clearContents()
+        let restored = backup.items.map { dict -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for (type, data) in dict { item.setData(data, forType: type) }
+            return item
+        }
+        if !restored.isEmpty {
+            pb.writeObjects(restored)
+        }
     }
 }

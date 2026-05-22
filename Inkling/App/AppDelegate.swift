@@ -9,16 +9,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let watcher = SelectionWatcher()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 一次性把旧的"拖选自动弹"开关清掉——新默认是关。用户想要可以从菜单重新开。
+        let watcherMigratedKey = "watcherEnabledMigratedV2"
+        if !UserDefaults.standard.bool(forKey: watcherMigratedKey) {
+            UserDefaults.standard.removeObject(forKey: AppSettings.watcherEnabledKey)
+            UserDefaults.standard.set(true, forKey: watcherMigratedKey)
+        }
+
         menuBar = MenuBarController()
 
-        // 主触发：拖选文本 → 自动弹出
+        // 拖选自动弹出已停用——容易误触。仅靠快捷键 / 状态栏主动唤起。
+        // watcher.onSelection 仍保留接线，方便将来在 Settings 里加开关重新启用。
         watcher.onSelection = { [weak self] selection, point in
             self?.present(selection: selection, at: point)
         }
-        watcher.start()
+        if AppSettings.watcherEnabled { watcher.start() }
 
-        // 可选辅助：用户可在 Settings 自定义一个快捷键，默认不设
+        // 默认快捷键 ⌘⇧Space。用 V2 迁移键覆盖之前默认的 ⌘⇧E 一次，之后用户改的就不再被覆盖。
+        let defaultMigratedKey = "summonShortcutDefaultV2"
+        if !UserDefaults.standard.bool(forKey: defaultMigratedKey) {
+            KeyboardShortcuts.setShortcut(.init(.space, modifiers: [.command, .shift]), for: .summon)
+            UserDefaults.standard.set(true, forKey: defaultMigratedKey)
+        }
         HotKeyManager.register(name: .summon) { [weak self] in
+            self?.handleManualSummon()
+        }
+
+        // 状态栏菜单的"唤起 Inkling"项发出此通知
+        NotificationCenter.default.addObserver(
+            forName: .inklingManualSummon,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             self?.handleManualSummon()
         }
 
@@ -31,7 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleManualSummon() {
-        guard let selection = SelectionReader.currentSelection(), !selection.text.isEmpty else { return }
+        // 有选区就带选区进来；没有也唤起一个空会话，让用户直接输入问题。
+        let selection = SelectionReader.currentSelection()
+            ?? Selection(text: "", sourceApp: nil)
         present(selection: selection, at: CursorTracker.location())
     }
 
@@ -52,6 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension KeyboardShortcuts.Name {
-    /// 可选的手动唤起快捷键。默认不设，让用户在 Settings 里自己绑。
+    /// 手动唤起快捷键。首次启动给个默认值（⌘⇧E），用户可在 Settings 里改。
     static let summon = Self("summonInkling")
+}
+
+extension Notification.Name {
+    /// 状态栏菜单点"唤起 Inkling"时发出。
+    static let inklingManualSummon = Notification.Name("inklingManualSummon")
 }

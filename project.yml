@@ -10,9 +10,11 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "13.0"
-    DEVELOPMENT_TEAM: "SK8V5TAN28"   # Yumi Zhang
-    CODE_SIGN_STYLE: Automatic
-    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"          # ad-hoc 签名，本地跑足够，无需 Apple Developer 账号
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO   # build script 需要跑 npm install，得能读 bridge/
 
 packages:
   KeyboardShortcuts:

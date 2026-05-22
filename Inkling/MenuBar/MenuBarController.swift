@@ -30,6 +30,14 @@ final class MenuBarController: NSObject {
         menu.addItem(toggleItem)
         menu.addItem(.separator())
 
+        let summon = NSMenuItem(
+            title: "唤起 Inkling",
+            action: #selector(summonPanel),
+            keyEquivalent: ""
+        )
+        summon.target = self
+        menu.addItem(summon)
+
         let settings = NSMenuItem(
             title: "Settings…",
             action: #selector(openSettings),
@@ -60,6 +68,10 @@ final class MenuBarController: NSObject {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func summonPanel() {
+        NotificationCenter.default.post(name: .inklingManualSummon, object: nil)
     }
 
     @objc private func toggleWatcher() {

@@ -20,9 +20,9 @@ enum AppSettings {
         return value.isEmpty ? defaultModel : value
     }
 
-    /// 是否启用划词监听。首次启动当作 true。
+    /// 是否启用拖选自动弹窗。默认关闭——靠快捷键 / 状态栏唤起更可控。
     static var watcherEnabled: Bool {
-        if UserDefaults.standard.object(forKey: watcherEnabledKey) == nil { return true }
+        if UserDefaults.standard.object(forKey: watcherEnabledKey) == nil { return false }
         return UserDefaults.standard.bool(forKey: watcherEnabledKey)
     }
 
