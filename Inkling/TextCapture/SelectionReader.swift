@@ -12,30 +12,16 @@ enum SelectionReader {
     ///   按 PID 直接读它的 focused element——这条路绕开 systemWide focus，即使 Inkling
     ///   把自己卡成前台（macOS 14+ 协作式激活下，deactivate 经常 no-op）也能拿到选区。
     static func currentSelection(for app: NSRunningApplication? = nil) -> Selection? {
-        let front = NSWorkspace.shared.frontmostApplication
-        diagLog.notice("SelectionReader.entry targetApp=\(app?.localizedName ?? "nil", privacy: .public) pid=\(app?.processIdentifier ?? -1, privacy: .public) front=\(front?.localizedName ?? "nil", privacy: .public) frontPid=\(front?.processIdentifier ?? -1, privacy: .public)")
         if let app, !app.isTerminated {
-            if let viaApp = readViaAccessibility(for: app) {
-                diagLog.notice("SelectionReader.PID_AX_HIT len=\(viaApp.text.count, privacy: .public)")
-                return viaApp
-            }
-            diagLog.notice("SelectionReader.PID_AX_MISS")
+            if let viaApp = readViaAccessibility(for: app) { return viaApp }
             // 目标 app 与当前前台不一致时不能走 systemWide / pasteboard fallback：
             // pasteboard 路径会 Cmd+C 给前台 app（很可能是 Inkling 自己），把面板
             // TextField 或旧剪贴板内容误当成用户选区。前台一致时再回落，Cmd+C 才会发给目标 app。
-            guard front?.processIdentifier == app.processIdentifier else {
-                diagLog.notice("SelectionReader.GATE_BLOCKED front!=target, return nil")
-                return nil
-            }
+            let front = NSWorkspace.shared.frontmostApplication
+            guard front?.processIdentifier == app.processIdentifier else { return nil }
         }
-        if let viaAX = readViaAccessibility() {
-            diagLog.notice("SelectionReader.SYSTEM_AX_HIT len=\(viaAX.text.count, privacy: .public)")
-            return viaAX
-        }
-        diagLog.notice("SelectionReader.SYSTEM_AX_MISS, fallback to pasteboard")
-        let result = readViaPasteboard()
-        diagLog.notice("SelectionReader.PB_RESULT \(result.map { "HIT len=\($0.text.count)" } ?? "MISS", privacy: .public)")
-        return result
+        if let viaAX = readViaAccessibility() { return viaAX }
+        return readViaPasteboard()
     }
 
     // MARK: - AX
@@ -45,27 +31,18 @@ enum SelectionReader {
     /// systemWide 路径会读到 Inkling 自身的 TextField。这条路用 AXUIElementCreateApplication
     /// 锁定目标 app，跟前台无关。
     private static func readViaAccessibility(for app: NSRunningApplication) -> Selection? {
-        guard app.bundleIdentifier != Bundle.main.bundleIdentifier else {
-            diagLog.notice("PID_AX skip: target is Inkling self")
-            return nil
-        }
+        guard app.bundleIdentifier != Bundle.main.bundleIdentifier else { return nil }
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         var focused: AnyObject?
-        let err = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused)
-        guard err == .success, let element = focused else {
-            diagLog.notice("PID_AX no focused element err=\(err.rawValue, privacy: .public)")
-            return nil
-        }
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let element = focused else { return nil }
         let axElement = element as! AXUIElement
         if let text = copyString(axElement, kAXSelectedTextAttribute) {
-            diagLog.notice("PID_AX got selected text via AXSelectedText")
             return Selection(text: text, sourceApp: app.localizedName)
         }
         if let text = sliceFromRange(axElement) {
-            diagLog.notice("PID_AX got selected text via range slice")
             return Selection(text: text, sourceApp: app.localizedName)
         }
-        diagLog.notice("PID_AX focused element has no selection")
         return nil
     }
 
@@ -150,8 +127,6 @@ enum SelectionReader {
     // 5. 恢复 pasteboard
 
     private static func readViaPasteboard() -> Selection? {
-        let frontAtStart = NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil"
-        diagLog.notice("PB.start front=\(frontAtStart, privacy: .public)")
         waitForModifiersToClear(timeout: 0.4)
 
         let pasteboard = NSPasteboard.general
@@ -173,14 +148,12 @@ enum SelectionReader {
             }
             Thread.sleep(forTimeInterval: 0.02)
         }
-        diagLog.notice("PB.cmdC copied=\(copied ? "true" : "false", privacy: .public) frontAfter=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil", privacy: .public)")
 
         let text: String? = copied ? pasteboard.string(forType: .string) : nil
 
         restorePasteboard(pasteboard, backup: backup, baseline: baseline)
 
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            diagLog.notice("PB.empty_or_whitespace")
             return nil
         }
         return Selection(text: text, sourceApp: NSWorkspace.shared.frontmostApplication?.localizedName)

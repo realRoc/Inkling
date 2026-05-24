@@ -48,10 +48,7 @@ final class FloatingPanel: NSPanel {
 
         viewModel.modeChanged
             .removeDuplicates()
-            .sink { [weak self] mode in
-                diagLog.notice("Mode→ \(String(describing: mode), privacy: .public)")
-                self?.adjustFrame(for: mode)
-            }
+            .sink { [weak self] mode in self?.adjustFrame(for: mode) }
             .store(in: &cancellables)
     }
 
@@ -116,8 +113,6 @@ final class FloatingPanel: NSPanel {
     }
 
     override func close() {
-        let frontBefore = NSWorkspace.shared.frontmostApplication
-        diagLog.notice("Close.start frontBefore=\(frontBefore?.localizedName ?? "nil", privacy: .public) prev=\(self.previousApp?.localizedName ?? "nil", privacy: .public)")
         removeClickOutsideMonitor()
         viewModel.resetForClose()
         makeFirstResponder(nil)
@@ -128,21 +123,13 @@ final class FloatingPanel: NSPanel {
         if let prev = previousApp, !prev.isTerminated {
             if #available(macOS 14.0, *) {
                 NSApp.yieldActivation(to: prev)
-                diagLog.notice("Close.yieldActivation to=\(prev.localizedName ?? "nil", privacy: .public)")
             } else {
                 NSApp.deactivate()
-                diagLog.notice("Close.deactivate (macOS<14)")
             }
-            let ok = prev.activate(options: [])
-            diagLog.notice("Close.prev.activate returned=\(ok ? "true" : "false", privacy: .public)")
+            prev.activate(options: [])
         } else {
             NSApp.deactivate()
-            diagLog.notice("Close.deactivate (no prev)")
         }
         previousApp = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            let frontAfter = NSWorkspace.shared.frontmostApplication
-            diagLog.notice("Close.frontAfter+200ms=\(frontAfter?.localizedName ?? "nil", privacy: .public) pid=\(frontAfter?.processIdentifier ?? -1, privacy: .public)")
-        }
     }
 }

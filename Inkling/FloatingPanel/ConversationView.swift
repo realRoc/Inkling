@@ -55,7 +55,6 @@ final class ConversationViewModel: ObservableObject {
 
     /// 关闭浮窗时调用——把状态拉回初始 toolbar，避免下次唤起残留上轮对话。
     func resetForClose() {
-        diagLog.notice("resetForClose called (was currentSelection=\(self.currentSelection != nil ? "non-nil" : "nil", privacy: .public))")
         selectionRetryGeneration &+= 1
         if let old = sessionId {
             bridge?.endSession(old)
@@ -84,17 +83,13 @@ final class ConversationViewModel: ObservableObject {
         self.targetApp = targetApp
         self.sessionId = sessions.newSession()
 
-        // 不要在这里重置 messages / input / isStreaming：resetForClose 已经清过了
-        // （首次启动时也是 init 默认值）。每多一次 @Published 写入就多触发一轮 SwiftUI
-        // dirty 标记，NSHostingView 会在 mode 改成非 nil **之前**先跑一次 body re-eval
-        // 读到 mode=nil，然后即便后面 mode 被改了也不再重新渲染——按钮就卡在灰态。
-        // prepare 只改 mode 这一个 @Published，SwiftUI 就只会刷一次 body，读到最终值。
+        // 不要在这里重置 messages / input / isStreaming / hintMessage：resetForClose
+        // 已经清过了（首次启动时也是 init 默认值）。多写一次 @Published 就多一轮 SwiftUI
+        // dirty，与下面的 mode 改写产生不必要的中间渲染。
 
         let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        diagLog.notice("prepare in.text.count=\(selection.text.count, privacy: .public) trimmed.count=\(text.count, privacy: .public) willSet currentSelection=\(text.isEmpty ? "nil" : "non-nil", privacy: .public)")
         self.currentSelection = text.isEmpty ? nil : text
         self.mode = .toolbar(selection: currentSelection)
-        diagLog.notice("prepare after set: currentSelection=\(self.currentSelection != nil ? "non-nil" : "nil", privacy: .public) mode=\(String(describing: self.mode), privacy: .public)")
 
         // 唤起瞬间常常抓不到选区：快捷键 modifier 还没松开，pasteboard fallback 直接放弃。
         // 后台短时间重试几次，抓到就把按钮自动点亮，避免"灰锁"。
@@ -138,7 +133,6 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func runQuickAction(_ action: QuickAction) {
-        diagLog.notice("runQuickAction \(String(describing: action), privacy: .public) currentSelection=\(self.currentSelection != nil ? "non-nil" : "nil", privacy: .public)")
         // 点击瞬间再尝试抓一次选区——窗口 nonactivating，原前台 app 仍是活跃的
         refreshSelectionIfNeeded()
         let sel = currentSelection ?? ""
@@ -207,8 +201,7 @@ struct ConversationView: View {
     @State private var pinned: Bool = false
 
     var body: some View {
-        diagLog.notice("ConversationView.body re-eval mode=\(String(describing: self.viewModel.mode), privacy: .public)")
-        return Group {
+        Group {
             switch viewModel.mode {
             case .toolbar(let selection):
                 ToolbarBar(hasSelection: selection != nil)
@@ -224,11 +217,6 @@ struct ConversationView: View {
 private struct ToolbarBar: View {
     let hasSelection: Bool
     @EnvironmentObject var viewModel: ConversationViewModel
-
-    init(hasSelection: Bool) {
-        self.hasSelection = hasSelection
-        diagLog.notice("ToolbarBar.init hasSelection=\(hasSelection, privacy: .public)")
-    }
 
     var body: some View {
         ZStack(alignment: .top) {
