@@ -8,6 +8,7 @@ xcuserdata/
 *.xcworkspace/
 DerivedData/
 build/
+build-deploy/
 
 # XcodeGen 生成物（保留 project.yml，忽略 xcodeproj）
 Inkling.xcodeproj/
