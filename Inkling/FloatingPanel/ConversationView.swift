@@ -46,6 +46,33 @@ final class ConversationViewModel: ObservableObject {
         let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
         self.currentSelection = text.isEmpty ? nil : text
         self.mode = .toolbar(selection: currentSelection)
+
+        // 唤起瞬间常常抓不到选区：快捷键 modifier 还没松开，pasteboard fallback 直接放弃。
+        // 后台短时间重试几次，抓到就把按钮自动点亮，避免"灰锁"。
+        if currentSelection == nil {
+            retrySelectionInBackground()
+        }
+    }
+
+    private func retrySelectionInBackground() {
+        let delays: [TimeInterval] = [0.15, 0.35, 0.7]
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.currentSelection == nil else { return }
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    guard let selection = SelectionReader.currentSelection() else { return }
+                    let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { return }
+                    DispatchQueue.main.async {
+                        guard let self, self.currentSelection == nil else { return }
+                        self.currentSelection = text
+                        if case .toolbar = self.mode {
+                            self.mode = .toolbar(selection: text)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func runQuickAction(_ action: QuickAction) {
