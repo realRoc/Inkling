@@ -135,19 +135,6 @@ final class ConversationViewModel: ObservableObject {
         }
     }
 
-    /// 复制选区文本到系统剪贴板。
-    func copySelectionToPasteboard() {
-        guard let sel = currentSelection else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(sel, forType: .string)
-    }
-
-    /// 复制最近一次 assistant 回复到系统剪贴板。
-    func copyLastAssistantMessage() {
-        guard let last = messages.last(where: { $0.role == .assistant }), !last.text.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(last.text, forType: .string)
-    }
 }
 
 // MARK: - 主视图
@@ -191,7 +178,6 @@ private struct ToolbarBar: View {
 
                 ToolbarButton(icon: "character.book.closed", label: "翻译", action: .translate, disabled: !hasSelection)
                 ToolbarButton(icon: "questionmark.circle", label: "解释", action: .explain, disabled: !hasSelection)
-                ToolbarButton(icon: "doc.on.doc", label: "复制", action: .copy, disabled: !hasSelection)
 
                 ToolbarSeparator()
 
@@ -249,7 +235,7 @@ private struct ToolbarSeparator: View {
 }
 
 private enum ToolbarAction {
-    case translate, explain, copy
+    case translate, explain
 }
 
 private struct ToolbarButton: View {
@@ -288,7 +274,6 @@ private struct ToolbarButton: View {
         switch action {
         case .translate: viewModel.runQuickAction(.translate)
         case .explain: viewModel.runQuickAction(.explain)
-        case .copy: viewModel.copySelectionToPasteboard()
         }
     }
 }
@@ -418,21 +403,6 @@ private struct ConversationCard: View {
             .buttonStyle(.plain)
             .disabled(viewModel.input.isEmpty || viewModel.isStreaming)
 
-            Button(action: { viewModel.copyLastAssistantMessage() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "doc.on.doc")
-                    Text("复制")
-                }
-                .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.primary.opacity(0.06))
-                )
-                .foregroundStyle(.primary)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
