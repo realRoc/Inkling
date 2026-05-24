@@ -37,6 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleManualSummon() {
+        // ⌘⇧Space 是 toggle：浮窗已显示时再按一次直接关掉。
+        if let panel, panel.isVisible {
+            panel.close()
+            return
+        }
         // 有选区就带选区进来；没有也唤起一个空会话，让用户直接输入问题。
         let selection = SelectionReader.currentSelection()
             ?? Selection(text: "", sourceApp: nil)

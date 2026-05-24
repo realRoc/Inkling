@@ -76,4 +76,9 @@ final class FloatingPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) {
         close()
     }
+
+    override func close() {
+        viewModel.resetForClose()
+        super.close()
+    }
 }

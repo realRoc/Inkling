@@ -31,6 +31,22 @@ final class ConversationViewModel: ObservableObject {
         var text: String
     }
 
+    /// 关闭浮窗时调用——把状态拉回初始 toolbar，避免下次唤起残留上轮对话。
+    func resetForClose() {
+        if let old = sessionId {
+            bridge?.endSession(old)
+        }
+        sessionId = nil
+        currentSelection = nil
+        messages = []
+        input = ""
+        isStreaming = false
+        hintMessage = nil
+        hintClearWorkItem?.cancel()
+        hintClearWorkItem = nil
+        mode = .toolbar(selection: nil)
+    }
+
     /// 唤起时调用——准备状态，从工具栏开始。
     func prepare(selection: Selection, bridge: BridgeProcess, sessions: SessionManager) {
         if let old = sessionId {
