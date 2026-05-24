@@ -189,10 +189,8 @@ private struct ToolbarBar: View {
 
                 ToolbarSeparator()
 
-                // 翻译/解释保持可点：抓不到选区时点击会 fallback 到剪贴板，
-                // 真的什么都没有再用 hint 提示。复制仍按 hasSelection 灰，因为它只复制选区。
-                ToolbarButton(icon: "character.book.closed", label: "翻译", action: .translate)
-                ToolbarButton(icon: "questionmark.circle", label: "解释", action: .explain)
+                ToolbarButton(icon: "character.book.closed", label: "翻译", action: .translate, disabled: !hasSelection)
+                ToolbarButton(icon: "questionmark.circle", label: "解释", action: .explain, disabled: !hasSelection)
                 ToolbarButton(icon: "doc.on.doc", label: "复制", action: .copy, disabled: !hasSelection)
 
                 ToolbarSeparator()
