@@ -11,6 +11,9 @@ final class FloatingPanel: NSPanel {
     /// 唤起前的前台 app。close 时主动激活它，避免 Inkling 进程残留 active
     /// 状态把 systemWide AX focus 钉在自己身上——这是"第二次读不到选区"的根因。
     private weak var previousApp: NSRunningApplication?
+    /// 点击浮窗外部自动关闭。全局 monitor 收不到自身进程的事件，
+    /// 所以点 Inkling 内部按钮不会误触发。
+    private var clickOutsideMonitor: Any?
 
     /// SwiftUI 内部已经画了卡片+阴影，所以这里的尺寸要给阴影留 padding 空间。
     private static let toolbarSize = NSSize(width: 660, height: 56)
@@ -58,6 +61,25 @@ final class FloatingPanel: NSPanel {
         viewModel.prepare(selection: selection, bridge: bridge, sessions: sessions)
         adjustFrame(for: viewModel.mode)
         orderFrontRegardless()
+        installClickOutsideMonitor()
+    }
+
+    private func installClickOutsideMonitor() {
+        removeClickOutsideMonitor()
+        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            guard let self else { return }
+            // global monitor 只收外部进程事件；点 Inkling 自身按钮不会触发这里
+            self.close()
+        }
+    }
+
+    private func removeClickOutsideMonitor() {
+        if let m = clickOutsideMonitor {
+            NSEvent.removeMonitor(m)
+            clickOutsideMonitor = nil
+        }
     }
 
     private func adjustFrame(for mode: ConversationViewModel.Mode) {
@@ -87,12 +109,14 @@ final class FloatingPanel: NSPanel {
     }
 
     override func close() {
+        removeClickOutsideMonitor()
         viewModel.resetForClose()
         makeFirstResponder(nil)
         super.close()
-        // 让原 app 重新成为前台。仅 makeFirstResponder/super.close 不够——
-        // 一旦 Inkling 进程被任何点击激活过，systemWide AX focus 就会一直钉在
-        // 自己身上。主动 activate 上一个 app 才能让 focus 切走。
+        // 让 Inkling 进程让出 active 状态。仅 makeFirstResponder/super.close 不够——
+        // 一旦 Inkling 被任何点击激活过，systemWide AX focus 就会一直钉在自己身上。
+        // 必须先 deactivate 自己，再激活原 app，systemWide focus 才会真正切走。
+        NSApp.deactivate()
         previousApp?.activate(options: [])
     }
 }
