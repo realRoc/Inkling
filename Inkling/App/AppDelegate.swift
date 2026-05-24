@@ -50,10 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func ensureAccessibilityPermission() {
-        let trusted = AXIsProcessTrustedWithOptions(
-            [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        )
-        if !trusted {
+        // 不传 prompt，否则系统会自己弹一个浅信息量的辅助功能对话框，和下面自定义的弹窗叠一起。
+        if !AXIsProcessTrusted() {
             NSLog("Inkling: Accessibility 权限未授予，划词功能将无法工作。")
             DispatchQueue.main.async { Self.promptForAccessibility() }
         }
