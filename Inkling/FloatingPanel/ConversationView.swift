@@ -25,6 +25,10 @@ final class ConversationViewModel: ObservableObject {
     /// systemWide focus（panel 一旦被点击，systemWide 就指到 Inkling 自己了）。
     /// 用强引用：弱引用一旦被提前回收，retry 整轮就废了。resetForClose 会清掉。
     private var targetApp: NSRunningApplication?
+    /// 给 selection retry 用的代际号。prepare / resetForClose 都会 bump，让上一轮还没跑完的
+    /// asyncAfter 在回写前发现自己已过期——避免"关闭后快速换 app 再唤起，旧 retry 把旧 app
+    /// 的选区写进新会话"。
+    private var selectionRetryGeneration: UInt64 = 0
 
     var hasSelection: Bool { currentSelection != nil }
 
@@ -37,6 +41,7 @@ final class ConversationViewModel: ObservableObject {
 
     /// 关闭浮窗时调用——把状态拉回初始 toolbar，避免下次唤起残留上轮对话。
     func resetForClose() {
+        selectionRetryGeneration &+= 1
         if let old = sessionId {
             bridge?.endSession(old)
         }
@@ -54,6 +59,8 @@ final class ConversationViewModel: ObservableObject {
 
     /// 唤起时调用——准备状态，从工具栏开始。
     func prepare(selection: Selection, bridge: BridgeProcess, sessions: SessionManager, targetApp: NSRunningApplication?) {
+        // 让上一轮还在排队的 retry 在回写时认出自己已过期——快速 close→summon 切换关键。
+        selectionRetryGeneration &+= 1
         if let old = sessionId {
             (self.bridge ?? bridge).endSession(old)
         }
@@ -81,9 +88,15 @@ final class ConversationViewModel: ObservableObject {
         // 这两种短暂状态；后面几次拉长，处理偶发慢响应。
         let delays: [TimeInterval] = [0.08, 0.18, 0.35, 0.7, 1.2]
         let app = targetApp
+        // 捕获当前代际号；resetForClose / prepare 会 bump，让后续回写在两道闸门上停下来。
+        // 闸门 1：deadline 到点检查；闸门 2：跨过 .global → .main 回到主线程时再检查。
+        // 第二道关键：第一道之后的全局任务可能已经读到旧 app 的选区，写回前必须再判一次。
+        let generation = selectionRetryGeneration
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.currentSelection == nil else { return }
+                guard let self,
+                      self.selectionRetryGeneration == generation,
+                      self.currentSelection == nil else { return }
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     // 优先按 PID 走 AX——panel 已经显示了，systemWide focus 可能已被 Inkling
                     // 自己抢走，但目标 app 自己的 focused element 仍然保留着用户的选区。
@@ -91,7 +104,9 @@ final class ConversationViewModel: ObservableObject {
                     let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { return }
                     DispatchQueue.main.async {
-                        guard let self, self.currentSelection == nil else { return }
+                        guard let self,
+                              self.selectionRetryGeneration == generation,
+                              self.currentSelection == nil else { return }
                         self.currentSelection = text
                         if case .toolbar = self.mode {
                             self.mode = .toolbar(selection: text)
