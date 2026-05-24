@@ -416,8 +416,11 @@ private struct ConversationCard: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(viewModel.messages) { msg in
-                        MessageBubble(message: msg)
-                            .id(msg.id)
+                        MessageBubble(
+                            message: msg,
+                            showTypingIndicator: viewModel.isStreaming && msg.id == viewModel.messages.last?.id
+                        )
+                        .id(msg.id)
                     }
                 }
                 .padding(14)
@@ -475,12 +478,16 @@ private struct ConversationCard: View {
 
 private struct MessageBubble: View {
     let message: ConversationViewModel.Message
+    /// 只在"当前还在 stream"且这条是最后一条 assistant message 时为 true。
+    /// 解耦了 indicator 和"text 为空"——避免 bridge 直接发 .done（没有任何 .delta）
+    /// 时，空 assistant 气泡一直显示脉冲点。
+    var showTypingIndicator: Bool = false
 
     var body: some View {
         HStack(alignment: .top) {
             if message.role == .user { Spacer(minLength: 32) }
             Group {
-                if message.role == .assistant && message.text.isEmpty {
+                if message.role == .assistant && message.text.isEmpty && showTypingIndicator {
                     TypingIndicator()
                 } else {
                     Text(message.text)

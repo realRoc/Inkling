@@ -37,6 +37,16 @@ fi
 
 # ---- 2. 切到 main 并拉最新（除非 --here） ----
 ORIGINAL_BRANCH=$(git branch --show-current || echo "")
+
+# 失败时把分支切回去，避免把用户晾在 main 上。trap 必须在 git checkout 之前装好——
+# 不然 checkout 或 pull 失败时 set -e 会先退出，trap 还没生效。
+restore_branch() {
+    if [ "$MODE" = "main" ] && [ -n "$ORIGINAL_BRANCH" ] && [ "$ORIGINAL_BRANCH" != "main" ]; then
+        git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
+    fi
+}
+trap restore_branch EXIT
+
 if [ "$MODE" = "main" ]; then
     step "切到 main 并 git pull --ff-only"
     git checkout main
@@ -46,14 +56,6 @@ else
 fi
 HEAD_SHA=$(git rev-parse --short HEAD)
 HEAD_BRANCH=$(git branch --show-current || echo "detached")
-
-# 失败时把分支切回去，避免把用户晾在 main 上
-restore_branch() {
-    if [ "$MODE" = "main" ] && [ -n "$ORIGINAL_BRANCH" ] && [ "$ORIGINAL_BRANCH" != "main" ]; then
-        git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
-    fi
-}
-trap restore_branch EXIT
 
 # ---- 3. Node bridge（缺产物才重建） ----
 if [ ! -f bridge/dist/index.js ] || [ ! -d bridge/node_modules ]; then
@@ -104,10 +106,15 @@ if pgrep -x Inkling >/dev/null 2>&1; then
 fi
 
 # ---- 7. 装到 /Applications ----
+# 先 cp 到临时 bundle，成功后再做"短窗口"的 rm + mv 原子替换。
+# 老逻辑是先 rm 再 cp——cp 中途失败会让 /Applications/Inkling.app 处于半拷贝或缺失状态。
 DEST="/Applications/Inkling.app"
+DEST_STAGING="${DEST}.deploy-staging"
 step "安装到 $DEST"
+rm -rf "$DEST_STAGING"
+cp -R "$APP_PATH" "$DEST_STAGING"
 rm -rf "$DEST"
-cp -R "$APP_PATH" "$DEST"
+mv "$DEST_STAGING" "$DEST"
 
 # ---- 8. 收尾 ----
 restore_branch
