@@ -68,10 +68,13 @@ final class ConversationViewModel: ObservableObject {
         self.bridge = bridge
         self.sessions = sessions
         self.targetApp = targetApp
-        self.messages = []
-        self.input = ""
-        self.isStreaming = false
         self.sessionId = sessions.newSession()
+
+        // 不要在这里重置 messages / input / isStreaming：resetForClose 已经清过了
+        // （首次启动时也是 init 默认值）。每多一次 @Published 写入就多触发一轮 SwiftUI
+        // dirty 标记，NSHostingView 会在 mode 改成非 nil **之前**先跑一次 body re-eval
+        // 读到 mode=nil，然后即便后面 mode 被改了也不再重新渲染——按钮就卡在灰态。
+        // prepare 只改 mode 这一个 @Published，SwiftUI 就只会刷一次 body，读到最终值。
 
         let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
         diagLog.notice("prepare in.text.count=\(selection.text.count, privacy: .public) trimmed.count=\(text.count, privacy: .public) willSet currentSelection=\(text.isEmpty ? "nil" : "non-nil", privacy: .public)")
