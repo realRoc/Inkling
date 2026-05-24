@@ -46,7 +46,7 @@ final class FloatingPanel: NSPanel {
         host.translatesAutoresizingMaskIntoConstraints = false
         contentView = host
 
-        viewModel.$mode
+        viewModel.modeChanged
             .removeDuplicates()
             .sink { [weak self] mode in self?.adjustFrame(for: mode) }
             .store(in: &cancellables)
