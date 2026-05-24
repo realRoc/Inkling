@@ -13,33 +13,28 @@ enum SelectionReader {
     ///   把自己卡成前台（macOS 14+ 协作式激活下，deactivate 经常 no-op）也能拿到选区。
     static func currentSelection(for app: NSRunningApplication? = nil) -> Selection? {
         let front = NSWorkspace.shared.frontmostApplication
-        NSLog("Inkling.Diag SelectionReader.entry targetApp=%@ pid=%d front=%@ frontPid=%d",
-              app?.localizedName ?? "nil",
-              app?.processIdentifier ?? -1,
-              front?.localizedName ?? "nil",
-              front?.processIdentifier ?? -1)
+        diagLog.notice("SelectionReader.entry targetApp=\(app?.localizedName ?? "nil", privacy: .public) pid=\(app?.processIdentifier ?? -1, privacy: .public) front=\(front?.localizedName ?? "nil", privacy: .public) frontPid=\(front?.processIdentifier ?? -1, privacy: .public)")
         if let app, !app.isTerminated {
             if let viaApp = readViaAccessibility(for: app) {
-                NSLog("Inkling.Diag SelectionReader.PID_AX_HIT len=%d", viaApp.text.count)
+                diagLog.notice("SelectionReader.PID_AX_HIT len=\(viaApp.text.count, privacy: .public)")
                 return viaApp
             }
-            NSLog("Inkling.Diag SelectionReader.PID_AX_MISS")
+            diagLog.notice("SelectionReader.PID_AX_MISS")
             // 目标 app 与当前前台不一致时不能走 systemWide / pasteboard fallback：
             // pasteboard 路径会 Cmd+C 给前台 app（很可能是 Inkling 自己），把面板
             // TextField 或旧剪贴板内容误当成用户选区。前台一致时再回落，Cmd+C 才会发给目标 app。
             guard front?.processIdentifier == app.processIdentifier else {
-                NSLog("Inkling.Diag SelectionReader.GATE_BLOCKED front!=target, return nil")
+                diagLog.notice("SelectionReader.GATE_BLOCKED front!=target, return nil")
                 return nil
             }
         }
         if let viaAX = readViaAccessibility() {
-            NSLog("Inkling.Diag SelectionReader.SYSTEM_AX_HIT len=%d", viaAX.text.count)
+            diagLog.notice("SelectionReader.SYSTEM_AX_HIT len=\(viaAX.text.count, privacy: .public)")
             return viaAX
         }
-        NSLog("Inkling.Diag SelectionReader.SYSTEM_AX_MISS, fallback to pasteboard")
+        diagLog.notice("SelectionReader.SYSTEM_AX_MISS, fallback to pasteboard")
         let result = readViaPasteboard()
-        NSLog("Inkling.Diag SelectionReader.PB_RESULT %@",
-              result.map { "HIT len=\($0.text.count)" } ?? "MISS")
+        diagLog.notice("SelectionReader.PB_RESULT \(result.map { "HIT len=\($0.text.count)" } ?? "MISS", privacy: .public)")
         return result
     }
 
@@ -51,26 +46,26 @@ enum SelectionReader {
     /// 锁定目标 app，跟前台无关。
     private static func readViaAccessibility(for app: NSRunningApplication) -> Selection? {
         guard app.bundleIdentifier != Bundle.main.bundleIdentifier else {
-            NSLog("Inkling.Diag PID_AX skip: target is Inkling self")
+            diagLog.notice("PID_AX skip: target is Inkling self")
             return nil
         }
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         var focused: AnyObject?
         let err = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused)
         guard err == .success, let element = focused else {
-            NSLog("Inkling.Diag PID_AX no focused element err=%d", err.rawValue)
+            diagLog.notice("PID_AX no focused element err=\(err.rawValue, privacy: .public)")
             return nil
         }
         let axElement = element as! AXUIElement
         if let text = copyString(axElement, kAXSelectedTextAttribute) {
-            NSLog("Inkling.Diag PID_AX got selected text via AXSelectedText")
+            diagLog.notice("PID_AX got selected text via AXSelectedText")
             return Selection(text: text, sourceApp: app.localizedName)
         }
         if let text = sliceFromRange(axElement) {
-            NSLog("Inkling.Diag PID_AX got selected text via range slice")
+            diagLog.notice("PID_AX got selected text via range slice")
             return Selection(text: text, sourceApp: app.localizedName)
         }
-        NSLog("Inkling.Diag PID_AX focused element has no selection")
+        diagLog.notice("PID_AX focused element has no selection")
         return nil
     }
 
@@ -156,7 +151,7 @@ enum SelectionReader {
 
     private static func readViaPasteboard() -> Selection? {
         let frontAtStart = NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil"
-        NSLog("Inkling.Diag PB.start front=%@", frontAtStart)
+        diagLog.notice("PB.start front=\(frontAtStart, privacy: .public)")
         waitForModifiersToClear(timeout: 0.4)
 
         let pasteboard = NSPasteboard.general
@@ -178,16 +173,14 @@ enum SelectionReader {
             }
             Thread.sleep(forTimeInterval: 0.02)
         }
-        NSLog("Inkling.Diag PB.cmdC copied=%@ frontAfter=%@",
-              copied ? "true" : "false",
-              NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil")
+        diagLog.notice("PB.cmdC copied=\(copied ? "true" : "false", privacy: .public) frontAfter=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil", privacy: .public)")
 
         let text: String? = copied ? pasteboard.string(forType: .string) : nil
 
         restorePasteboard(pasteboard, backup: backup, baseline: baseline)
 
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            NSLog("Inkling.Diag PB.empty_or_whitespace")
+            diagLog.notice("PB.empty_or_whitespace")
             return nil
         }
         return Selection(text: text, sourceApp: NSWorkspace.shared.frontmostApplication?.localizedName)

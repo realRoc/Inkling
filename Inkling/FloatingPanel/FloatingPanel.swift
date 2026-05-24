@@ -114,9 +114,7 @@ final class FloatingPanel: NSPanel {
 
     override func close() {
         let frontBefore = NSWorkspace.shared.frontmostApplication
-        NSLog("Inkling.Diag Close.start frontBefore=%@ prev=%@",
-              frontBefore?.localizedName ?? "nil",
-              previousApp?.localizedName ?? "nil")
+        diagLog.notice("Close.start frontBefore=\(frontBefore?.localizedName ?? "nil", privacy: .public) prev=\(self.previousApp?.localizedName ?? "nil", privacy: .public)")
         removeClickOutsideMonitor()
         viewModel.resetForClose()
         makeFirstResponder(nil)
@@ -127,23 +125,21 @@ final class FloatingPanel: NSPanel {
         if let prev = previousApp, !prev.isTerminated {
             if #available(macOS 14.0, *) {
                 NSApp.yieldActivation(to: prev)
-                NSLog("Inkling.Diag Close.yieldActivation to=%@", prev.localizedName ?? "nil")
+                diagLog.notice("Close.yieldActivation to=\(prev.localizedName ?? "nil", privacy: .public)")
             } else {
                 NSApp.deactivate()
-                NSLog("Inkling.Diag Close.deactivate (macOS<14)")
+                diagLog.notice("Close.deactivate (macOS<14)")
             }
             let ok = prev.activate(options: [])
-            NSLog("Inkling.Diag Close.prev.activate returned=%@", ok ? "true" : "false")
+            diagLog.notice("Close.prev.activate returned=\(ok ? "true" : "false", privacy: .public)")
         } else {
             NSApp.deactivate()
-            NSLog("Inkling.Diag Close.deactivate (no prev)")
+            diagLog.notice("Close.deactivate (no prev)")
         }
         previousApp = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             let frontAfter = NSWorkspace.shared.frontmostApplication
-            NSLog("Inkling.Diag Close.frontAfter+200ms=%@ pid=%d",
-                  frontAfter?.localizedName ?? "nil",
-                  frontAfter?.processIdentifier ?? -1)
+            diagLog.notice("Close.frontAfter+200ms=\(frontAfter?.localizedName ?? "nil", privacy: .public) pid=\(frontAfter?.processIdentifier ?? -1, privacy: .public)")
         }
     }
 }
