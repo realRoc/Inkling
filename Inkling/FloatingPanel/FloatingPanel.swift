@@ -79,6 +79,9 @@ final class FloatingPanel: NSPanel {
 
     override func close() {
         viewModel.resetForClose()
+        // 主动让出 first responder，加速 systemWide AX focus 切回原 app，
+        // 否则下次唤起读 selection 会读到本浮窗的残留 element。
+        makeFirstResponder(nil)
         super.close()
     }
 }

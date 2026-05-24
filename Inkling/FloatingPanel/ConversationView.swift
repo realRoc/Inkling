@@ -71,7 +71,9 @@ final class ConversationViewModel: ObservableObject {
     }
 
     private func retrySelectionInBackground() {
-        let delays: [TimeInterval] = [0.15, 0.35, 0.7]
+        // 节奏由密到疏。前几次密集兜住"快捷键 modifier 没松开"和"key window 没切回原 app"
+        // 这两种短暂状态；后面几次拉长，处理偶发慢响应。
+        let delays: [TimeInterval] = [0.08, 0.18, 0.35, 0.7, 1.2]
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.currentSelection == nil else { return }

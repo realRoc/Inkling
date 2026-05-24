@@ -26,6 +26,15 @@ enum SelectionReader {
         guard err == .success, let element = focused else { return nil }
         let axElement = element as! AXUIElement
 
+        // systemWide focused element 跟 key window 走。若 panel 刚关，key
+        // 还没切回原 app，focus 会残留在 Inkling 自己的 TextField 上——
+        // 那读出来的不是用户选区。直接判它无效，让 caller retry。
+        var pid: pid_t = 0
+        if AXUIElementGetPid(axElement, &pid) == .success,
+           pid == ProcessInfo.processInfo.processIdentifier {
+            return nil
+        }
+
         // 1) 标准路径：直接读 AXSelectedText（很多原生 NSTextView/NSTextField 都支持）
         if let text = copyString(axElement, kAXSelectedTextAttribute) {
             return Selection(text: text, sourceApp: frontApp())
