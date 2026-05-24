@@ -479,17 +479,46 @@ private struct MessageBubble: View {
     var body: some View {
         HStack(alignment: .top) {
             if message.role == .user { Spacer(minLength: 32) }
-            Text(message.text)
-                .font(.system(size: 13))
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(message.role == .user
-                              ? Color.accentColor.opacity(0.15)
-                              : Color.primary.opacity(0.06))
-                )
-                .textSelection(.enabled)
+            Group {
+                if message.role == .assistant && message.text.isEmpty {
+                    TypingIndicator()
+                } else {
+                    Text(message.text)
+                        .font(.system(size: 13))
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(message.role == .user
+                          ? Color.accentColor.opacity(0.15)
+                          : Color.primary.opacity(0.06))
+            )
             if message.role == .assistant { Spacer(minLength: 32) }
         }
+    }
+}
+
+private struct TypingIndicator: View {
+    @State private var animating = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(Color.secondary)
+                    .frame(width: 6, height: 6)
+                    .opacity(animating ? 1.0 : 0.25)
+                    .animation(
+                        .easeInOut(duration: 0.6)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.18),
+                        value: animating
+                    )
+            }
+        }
+        .frame(height: 14)
+        .onAppear { animating = true }
     }
 }
