@@ -113,6 +113,10 @@ final class FloatingPanel: NSPanel {
     }
 
     override func close() {
+        let frontBefore = NSWorkspace.shared.frontmostApplication
+        NSLog("Inkling.Diag Close.start frontBefore=%@ prev=%@",
+              frontBefore?.localizedName ?? "nil",
+              previousApp?.localizedName ?? "nil")
         removeClickOutsideMonitor()
         viewModel.resetForClose()
         makeFirstResponder(nil)
@@ -123,13 +127,23 @@ final class FloatingPanel: NSPanel {
         if let prev = previousApp, !prev.isTerminated {
             if #available(macOS 14.0, *) {
                 NSApp.yieldActivation(to: prev)
+                NSLog("Inkling.Diag Close.yieldActivation to=%@", prev.localizedName ?? "nil")
             } else {
                 NSApp.deactivate()
+                NSLog("Inkling.Diag Close.deactivate (macOS<14)")
             }
-            prev.activate(options: [])
+            let ok = prev.activate(options: [])
+            NSLog("Inkling.Diag Close.prev.activate returned=%@", ok ? "true" : "false")
         } else {
             NSApp.deactivate()
+            NSLog("Inkling.Diag Close.deactivate (no prev)")
         }
         previousApp = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let frontAfter = NSWorkspace.shared.frontmostApplication
+            NSLog("Inkling.Diag Close.frontAfter+200ms=%@ pid=%d",
+                  frontAfter?.localizedName ?? "nil",
+                  frontAfter?.processIdentifier ?? -1)
+        }
     }
 }

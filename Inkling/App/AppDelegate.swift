@@ -26,8 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] note in
-            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            NSLog("Inkling.Diag DidActivate %@ pid=%d isSelf=%@",
+                  app.localizedName ?? "nil",
+                  app.processIdentifier,
+                  app.bundleIdentifier == Bundle.main.bundleIdentifier ? "true" : "false")
+            guard app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
             self?.lastUserApp = app
         }
 
@@ -58,8 +62,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleManualSummon() {
+        let front = NSWorkspace.shared.frontmostApplication
+        NSLog("Inkling.Diag Summon front=%@ frontPid=%d lastUserApp=%@ lastUserPid=%d panelVisible=%@",
+              front?.localizedName ?? "nil",
+              front?.processIdentifier ?? -1,
+              lastUserApp?.localizedName ?? "nil",
+              lastUserApp?.processIdentifier ?? -1,
+              (panel?.isVisible ?? false) ? "true" : "false")
         // ⌘⇧Space 是 toggle：浮窗已显示时再按一次直接关掉。
         if let panel, panel.isVisible {
+            NSLog("Inkling.Diag Summon toggle-close")
             panel.close()
             return
         }
@@ -76,9 +88,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return nil
         }()
+        NSLog("Inkling.Diag Summon targetApp=%@ pid=%d",
+              targetApp?.localizedName ?? "nil",
+              targetApp?.processIdentifier ?? -1)
         // 有选区就带选区进来；没有也唤起一个空会话，让用户直接输入问题。
         let selection = SelectionReader.currentSelection(for: targetApp)
             ?? Selection(text: "", sourceApp: nil)
+        NSLog("Inkling.Diag Summon selection len=%d source=%@",
+              selection.text.count,
+              selection.sourceApp ?? "nil")
         present(selection: selection, at: CursorTracker.location(), targetApp: targetApp)
     }
 
