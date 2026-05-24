@@ -121,6 +121,7 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func runQuickAction(_ action: QuickAction) {
+        diagLog.notice("runQuickAction \(String(describing: action), privacy: .public) currentSelection=\(self.currentSelection != nil ? "non-nil" : "nil", privacy: .public)")
         // 点击瞬间再尝试抓一次选区——窗口 nonactivating，原前台 app 仍是活跃的
         refreshSelectionIfNeeded()
         let sel = currentSelection ?? ""
@@ -189,7 +190,8 @@ struct ConversationView: View {
     @State private var pinned: Bool = false
 
     var body: some View {
-        Group {
+        diagLog.notice("ConversationView.body re-eval mode=\(String(describing: self.viewModel.mode), privacy: .public)")
+        return Group {
             switch viewModel.mode {
             case .toolbar(let selection):
                 ToolbarBar(hasSelection: selection != nil)
@@ -205,6 +207,11 @@ struct ConversationView: View {
 private struct ToolbarBar: View {
     let hasSelection: Bool
     @EnvironmentObject var viewModel: ConversationViewModel
+
+    init(hasSelection: Bool) {
+        self.hasSelection = hasSelection
+        diagLog.notice("ToolbarBar.init hasSelection=\(hasSelection, privacy: .public)")
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
