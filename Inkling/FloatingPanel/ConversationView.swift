@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -10,7 +11,20 @@ final class ConversationViewModel: ObservableObject {
 
     enum QuickAction { case translate, explain }
 
-    @Published var mode: Mode = .toolbar(selection: nil)
+    /// `mode` 故意**不**用 @Published：@Published 在 `willSet` 里发 `objectWillChange.send()`，
+    /// 即**早于**存储更新。NSHostingView 在第二次 summon（panel close→reopen）时会同步刷 body，
+    /// 那时存储还是旧值，按钮被渲染成灰；后面存储真正更新了，但 SwiftUI 不再跑第二次 body。
+    /// 改成 didSet 后，objectWillChange 在存储更新**之后**才发出去，SwiftUI 同步刷 body 时
+    /// 读到的就是新值。modeChanged Publisher 替代 `$mode`，供 FloatingPanel 的 sink 用。
+    var mode: Mode = .toolbar(selection: nil) {
+        didSet {
+            objectWillChange.send()
+            modeChangedSubject.send(mode)
+        }
+    }
+    private let modeChangedSubject = PassthroughSubject<Mode, Never>()
+    var modeChanged: AnyPublisher<Mode, Never> { modeChangedSubject.eraseToAnyPublisher() }
+
     @Published var messages: [Message] = []
     @Published var input: String = ""
     @Published var isStreaming: Bool = false
