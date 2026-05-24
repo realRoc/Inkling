@@ -24,20 +24,57 @@ enum SelectionReader {
             &focused
         )
         guard err == .success, let element = focused else { return nil }
+        let axElement = element as! AXUIElement
 
-        var selected: AnyObject?
-        let selErr = AXUIElementCopyAttributeValue(
-            element as! AXUIElement,
-            kAXSelectedTextAttribute as CFString,
-            &selected
-        )
-        guard selErr == .success,
-              let text = selected as? String,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
+        // 1) 标准路径：直接读 AXSelectedText（很多原生 NSTextView/NSTextField 都支持）
+        if let text = copyString(axElement, kAXSelectedTextAttribute) {
+            return Selection(text: text, sourceApp: frontApp())
         }
 
-        return Selection(text: text, sourceApp: NSWorkspace.shared.frontmostApplication?.localizedName)
+        // 2) Fallback：拿 AXSelectedTextRange + AXValue 自己切片。
+        //    Safari / 部分 Web view / Pages / Sublime 之类只暴露这条。
+        if let text = sliceFromRange(axElement) {
+            return Selection(text: text, sourceApp: frontApp())
+        }
+
+        return nil
+    }
+
+    private static func copyString(_ element: AXUIElement, _ attr: String) -> String? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attr as CFString, &value) == .success,
+              let s = value as? String else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : s
+    }
+
+    /// 通过 AXSelectedTextRange + AXValue 切片。range 是 CFRange (location/length)。
+    private static func sliceFromRange(_ element: AXUIElement) -> String? {
+        var rangeValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeValue) == .success,
+              CFGetTypeID(rangeValue!) == AXValueGetTypeID() else { return nil }
+
+        var range = CFRange(location: 0, length: 0)
+        let axValue = rangeValue as! AXValue
+        guard AXValueGetValue(axValue, .cfRange, &range), range.length > 0 else { return nil }
+
+        var fullValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &fullValue) == .success,
+              let full = fullValue as? String else { return nil }
+
+        // 用 UTF-16 视图切片——AX range 是 UTF-16 单位。
+        let utf16 = Array(full.utf16)
+        let start = max(0, range.location)
+        let end = min(utf16.count, range.location + range.length)
+        guard start < end else { return nil }
+        let slice = Array(utf16[start..<end])
+        let text = String(utf16CodeUnits: slice, count: slice.count)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : text
+    }
+
+    private static func frontApp() -> String? {
+        NSWorkspace.shared.frontmostApplication?.localizedName
     }
 
     // MARK: - Pasteboard 回退

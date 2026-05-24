@@ -2,15 +2,9 @@ import AppKit
 
 final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
-    private let toggleItem: NSMenuItem
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        toggleItem = NSMenuItem(
-            title: "启用划词",
-            action: #selector(toggleWatcher),
-            keyEquivalent: ""
-        )
         super.init()
 
         if let button = statusItem.button {
@@ -23,11 +17,6 @@ final class MenuBarController: NSObject {
         let title = NSMenuItem(title: "Inkling", action: nil, keyEquivalent: "")
         title.isEnabled = false
         menu.addItem(title)
-        menu.addItem(.separator())
-
-        toggleItem.target = self
-        toggleItem.state = AppSettings.watcherEnabled ? .on : .off
-        menu.addItem(toggleItem)
         menu.addItem(.separator())
 
         let summon = NSMenuItem(
@@ -56,32 +45,10 @@ final class MenuBarController: NSObject {
         menu.addItem(quit)
 
         statusItem.menu = menu
-
-        // 外部（比如 Settings 里直接改 UserDefaults）切换时，菜单勾选状态同步。
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(refreshToggleState),
-            name: UserDefaults.didChangeNotification,
-            object: nil
-        )
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
     }
 
     @objc private func summonPanel() {
         NotificationCenter.default.post(name: .inklingManualSummon, object: nil)
-    }
-
-    @objc private func toggleWatcher() {
-        let next = !AppSettings.watcherEnabled
-        AppSettings.setWatcherEnabled(next)
-        toggleItem.state = next ? .on : .off
-    }
-
-    @objc private func refreshToggleState() {
-        toggleItem.state = AppSettings.watcherEnabled ? .on : .off
     }
 
     @objc private func openSettings() {

@@ -78,17 +78,12 @@ final class ConversationViewModel: ObservableObject {
     func runQuickAction(_ action: QuickAction) {
         // 点击瞬间再尝试抓一次选区——窗口 nonactivating，原前台 app 仍是活跃的
         refreshSelectionIfNeeded()
-        // 最后兜底：用系统剪贴板。用户可在原 app 里 Cmd+C 后再唤起。
-        let sel = currentSelection ?? readPasteboardString() ?? ""
+        let sel = currentSelection ?? ""
 
-        // 真的没东西可翻就提示一下，不切空卡片
         guard !sel.isEmpty else {
-            flashHint("请先选中或复制要处理的文本")
+            flashHint("没抓到选区，检查 Accessibility 权限或当前 app 是否支持")
             return
         }
-
-        // 把兜底拿到的内容固化下来，免得后续重复抓
-        currentSelection = sel
 
         switch action {
         case .translate:
@@ -98,12 +93,6 @@ final class ConversationViewModel: ObservableObject {
             mode = .conversation(title: "解释", icon: "questionmark.circle")
             send(prompt: "请简要解释下面这段内容：\n\n\(sel)")
         }
-    }
-
-    private func readPasteboardString() -> String? {
-        let raw = NSPasteboard.general.string(forType: .string) ?? ""
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
     }
 
     private func flashHint(_ text: String) {

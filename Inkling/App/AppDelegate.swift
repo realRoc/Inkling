@@ -6,24 +6,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: FloatingPanel?
     private let bridge = BridgeProcess()
     private let sessions = SessionManager()
-    private let watcher = SelectionWatcher()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 一次性把旧的"拖选自动弹"开关清掉——新默认是关。用户想要可以从菜单重新开。
-        let watcherMigratedKey = "watcherEnabledMigratedV2"
-        if !UserDefaults.standard.bool(forKey: watcherMigratedKey) {
-            UserDefaults.standard.removeObject(forKey: AppSettings.watcherEnabledKey)
-            UserDefaults.standard.set(true, forKey: watcherMigratedKey)
-        }
-
         menuBar = MenuBarController()
-
-        // 拖选自动弹出已停用——容易误触。仅靠快捷键 / 状态栏主动唤起。
-        // watcher.onSelection 仍保留接线，方便将来在 Settings 里加开关重新启用。
-        watcher.onSelection = { [weak self] selection, point in
-            self?.present(selection: selection, at: point)
-        }
-        if AppSettings.watcherEnabled { watcher.start() }
 
         // 默认快捷键 ⌘⇧Space。用 V2 迁移键覆盖之前默认的 ⌘⇧E 一次，之后用户改的就不再被覆盖。
         let defaultMigratedKey = "summonShortcutDefaultV2"
@@ -48,7 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        watcher.stop()
         bridge.shutdown()
     }
 
@@ -71,6 +55,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         if !trusted {
             NSLog("Inkling: Accessibility 权限未授予，划词功能将无法工作。")
+            DispatchQueue.main.async { Self.promptForAccessibility() }
+        }
+    }
+
+    /// 没 AX 权限时弹窗引导，并提供一键跳系统设置。
+    private static func promptForAccessibility() {
+        let alert = NSAlert()
+        alert.messageText = "需要 Accessibility 权限"
+        alert.informativeText = """
+        Inkling 需要 Accessibility 权限才能读取你选中的文本。
+        请在「系统设置 → 隐私与安全 → 辅助功能」里把 Inkling 打开。
+        每次重新安装 Inkling.app 后都需要重新勾选。
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "打开系统设置")
+        alert.addButton(withTitle: "稍后")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+            NSWorkspace.shared.open(url)
         }
     }
 }
