@@ -48,7 +48,10 @@ final class FloatingPanel: NSPanel {
 
         viewModel.$mode
             .removeDuplicates()
-            .sink { [weak self] mode in self?.adjustFrame(for: mode) }
+            .sink { [weak self] mode in
+                diagLog.notice("Mode→ \(String(describing: mode), privacy: .public)")
+                self?.adjustFrame(for: mode)
+            }
             .store(in: &cancellables)
     }
 

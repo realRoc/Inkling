@@ -41,6 +41,7 @@ final class ConversationViewModel: ObservableObject {
 
     /// 关闭浮窗时调用——把状态拉回初始 toolbar，避免下次唤起残留上轮对话。
     func resetForClose() {
+        diagLog.notice("resetForClose called (was currentSelection=\(self.currentSelection != nil ? "non-nil" : "nil", privacy: .public))")
         selectionRetryGeneration &+= 1
         if let old = sessionId {
             bridge?.endSession(old)
@@ -73,8 +74,10 @@ final class ConversationViewModel: ObservableObject {
         self.sessionId = sessions.newSession()
 
         let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        diagLog.notice("prepare in.text.count=\(selection.text.count, privacy: .public) trimmed.count=\(text.count, privacy: .public) willSet currentSelection=\(text.isEmpty ? "nil" : "non-nil", privacy: .public)")
         self.currentSelection = text.isEmpty ? nil : text
         self.mode = .toolbar(selection: currentSelection)
+        diagLog.notice("prepare after set: currentSelection=\(self.currentSelection != nil ? "non-nil" : "nil", privacy: .public) mode=\(String(describing: self.mode), privacy: .public)")
 
         // 唤起瞬间常常抓不到选区：快捷键 modifier 还没松开，pasteboard fallback 直接放弃。
         // 后台短时间重试几次，抓到就把按钮自动点亮，避免"灰锁"。
