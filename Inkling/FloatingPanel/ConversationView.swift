@@ -21,6 +21,9 @@ final class ConversationViewModel: ObservableObject {
     private var sessions: SessionManager?
     private var sessionId: String?
     private(set) var currentSelection: String?
+    /// 用户唤起 Inkling 之前所在的 app。后台 retry 用它按 PID 直接读 AX，避免依赖
+    /// systemWide focus（panel 一旦被点击，systemWide 就指到 Inkling 自己了）。
+    private weak var targetApp: NSRunningApplication?
 
     var hasSelection: Bool { currentSelection != nil }
 
@@ -38,6 +41,7 @@ final class ConversationViewModel: ObservableObject {
         }
         sessionId = nil
         currentSelection = nil
+        targetApp = nil
         messages = []
         input = ""
         isStreaming = false
@@ -48,12 +52,13 @@ final class ConversationViewModel: ObservableObject {
     }
 
     /// 唤起时调用——准备状态，从工具栏开始。
-    func prepare(selection: Selection, bridge: BridgeProcess, sessions: SessionManager) {
+    func prepare(selection: Selection, bridge: BridgeProcess, sessions: SessionManager, targetApp: NSRunningApplication?) {
         if let old = sessionId {
             (self.bridge ?? bridge).endSession(old)
         }
         self.bridge = bridge
         self.sessions = sessions
+        self.targetApp = targetApp
         self.messages = []
         self.input = ""
         self.isStreaming = false
@@ -74,11 +79,14 @@ final class ConversationViewModel: ObservableObject {
         // 节奏由密到疏。前几次密集兜住"快捷键 modifier 没松开"和"key window 没切回原 app"
         // 这两种短暂状态；后面几次拉长，处理偶发慢响应。
         let delays: [TimeInterval] = [0.08, 0.18, 0.35, 0.7, 1.2]
+        let app = targetApp
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.currentSelection == nil else { return }
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                    guard let selection = SelectionReader.currentSelection() else { return }
+                    // 优先按 PID 走 AX——panel 已经显示了，systemWide focus 可能已被 Inkling
+                    // 自己抢走，但目标 app 自己的 focused element 仍然保留着用户的选区。
+                    guard let selection = SelectionReader.currentSelection(for: app) else { return }
                     let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { return }
                     DispatchQueue.main.async {
@@ -123,7 +131,7 @@ final class ConversationViewModel: ObservableObject {
 
     private func refreshSelectionIfNeeded() {
         guard currentSelection == nil else { return }
-        guard let selection = SelectionReader.currentSelection() else { return }
+        guard let selection = SelectionReader.currentSelection(for: targetApp) else { return }
         let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
             self.currentSelection = text

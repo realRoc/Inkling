@@ -50,15 +50,17 @@ final class FloatingPanel: NSPanel {
             .store(in: &cancellables)
     }
 
-    func present(at point: NSPoint, with selection: Selection) {
+    func present(at point: NSPoint, with selection: Selection, targetApp: NSRunningApplication?) {
         anchorPoint = point
-        // 在 panel 显示之前记录前台 app，close 时用来把焦点还回去。
-        // 已经是 Inkling 自己（说明上次没让出 active）就不覆盖前一次记录。
-        if let front = NSWorkspace.shared.frontmostApplication,
-           front.bundleIdentifier != Bundle.main.bundleIdentifier {
+        // 优先用调用方算好的 targetApp（含"Inkling 卡前台时退回到最近记录"的兜底）；
+        // 没传就退回到当前前台。close 时用它把焦点还回去；retry 时用它直接按 PID 读 AX。
+        if let target = targetApp {
+            previousApp = target
+        } else if let front = NSWorkspace.shared.frontmostApplication,
+                  front.bundleIdentifier != Bundle.main.bundleIdentifier {
             previousApp = front
         }
-        viewModel.prepare(selection: selection, bridge: bridge, sessions: sessions)
+        viewModel.prepare(selection: selection, bridge: bridge, sessions: sessions, targetApp: previousApp)
         adjustFrame(for: viewModel.mode)
         orderFrontRegardless()
         installClickOutsideMonitor()
@@ -113,10 +115,18 @@ final class FloatingPanel: NSPanel {
         viewModel.resetForClose()
         makeFirstResponder(nil)
         super.close()
-        // 让 Inkling 进程让出 active 状态。仅 makeFirstResponder/super.close 不够——
-        // 一旦 Inkling 被任何点击激活过，systemWide AX focus 就会一直钉在自己身上。
-        // 必须先 deactivate 自己，再激活原 app，systemWide focus 才会真正切走。
-        NSApp.deactivate()
-        previousApp?.activate(options: [])
+        // 让 Inkling 让出 active 状态。macOS 14 起协作激活：deprecated 的 NSApp.deactivate()
+        // 在新系统上经常 no-op，必须显式 yieldActivation(to:)，previousApp.activate() 才能真正生效；
+        // 否则 Inkling 会卡在前台，systemWide AX focus 一直钉在自己身上，下次唤起读不到选区。
+        if let prev = previousApp {
+            if #available(macOS 14.0, *) {
+                NSApp.yieldActivation(to: prev)
+            } else {
+                NSApp.deactivate()
+            }
+            prev.activate(options: [])
+        } else {
+            NSApp.deactivate()
+        }
     }
 }

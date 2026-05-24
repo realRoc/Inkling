@@ -7,13 +7,37 @@ struct Selection {
 }
 
 enum SelectionReader {
-    /// 读取当前选中文本。先走 AX，失败则回退到 pasteboard 复制法。
-    static func currentSelection() -> Selection? {
+    /// 读取当前选中文本。
+    /// - Parameter app: 已知的目标 app（用户唤起 Inkling 之前所在的那个）。若提供，优先
+    ///   按 PID 直接读它的 focused element——这条路绕开 systemWide focus，即使 Inkling
+    ///   把自己卡成前台（macOS 14+ 协作式激活下，deactivate 经常 no-op）也能拿到选区。
+    static func currentSelection(for app: NSRunningApplication? = nil) -> Selection? {
+        if let app, let viaApp = readViaAccessibility(for: app) { return viaApp }
         if let viaAX = readViaAccessibility() { return viaAX }
         return readViaPasteboard()
     }
 
     // MARK: - AX
+
+    /// 按 PID 直接读指定 app 的 focused element。
+    /// systemWide focus 跟前台 app 走；若 Inkling 自己卡在前台（panel 被点过没让出 active），
+    /// systemWide 路径会读到 Inkling 自身的 TextField。这条路用 AXUIElementCreateApplication
+    /// 锁定目标 app，跟前台无关。
+    private static func readViaAccessibility(for app: NSRunningApplication) -> Selection? {
+        guard app.bundleIdentifier != Bundle.main.bundleIdentifier else { return nil }
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var focused: AnyObject?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let element = focused else { return nil }
+        let axElement = element as! AXUIElement
+        if let text = copyString(axElement, kAXSelectedTextAttribute) {
+            return Selection(text: text, sourceApp: app.localizedName)
+        }
+        if let text = sliceFromRange(axElement) {
+            return Selection(text: text, sourceApp: app.localizedName)
+        }
+        return nil
+    }
 
     private static func readViaAccessibility() -> Selection? {
         let systemWide = AXUIElementCreateSystemWide()
@@ -26,9 +50,9 @@ enum SelectionReader {
         guard err == .success, let element = focused else { return nil }
         let axElement = element as! AXUIElement
 
-        // systemWide focused element 跟 key window 走。若 panel 刚关，key
-        // 还没切回原 app，focus 会残留在 Inkling 自己的 TextField 上——
-        // 那读出来的不是用户选区。直接判它无效，让 caller retry。
+        // systemWide focused element 跟前台 app 走。若 Inkling 自己仍卡在 active 状态
+        // （deactivate 在 macOS 14+ 上常常没生效），focus 会指到自家的 TextField——
+        // 那读出来的不是用户选区。直接判无效，让 caller 走 PID 路径或 pasteboard。
         var pid: pid_t = 0
         if AXUIElementGetPid(axElement, &pid) == .success,
            pid == ProcessInfo.processInfo.processIdentifier {
