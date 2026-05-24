@@ -14,6 +14,8 @@ final class ConversationViewModel: ObservableObject {
     @Published var messages: [Message] = []
     @Published var input: String = ""
     @Published var isStreaming: Bool = false
+    @Published var hintMessage: String?
+    private var hintClearWorkItem: DispatchWorkItem?
 
     private var bridge: BridgeProcess?
     private var sessions: SessionManager?
@@ -51,18 +53,28 @@ final class ConversationViewModel: ObservableObject {
         refreshSelectionIfNeeded()
         let sel = currentSelection ?? ""
 
+        // 无选区时保持在 toolbar 闪个提示，避免切到空 conversation 卡片让用户困惑
+        guard !sel.isEmpty else {
+            flashHint("请先选中文本")
+            return
+        }
+
         switch action {
         case .translate:
             mode = .conversation(title: "翻译", icon: "character.book.closed")
-            if !sel.isEmpty {
-                send(prompt: "请翻译下面这段内容（中文↔英文，根据原文自动判断方向）：\n\n\(sel)")
-            }
+            send(prompt: "请翻译下面这段内容（中文↔英文，根据原文自动判断方向）：\n\n\(sel)")
         case .explain:
             mode = .conversation(title: "解释", icon: "questionmark.circle")
-            if !sel.isEmpty {
-                send(prompt: "请简要解释下面这段内容：\n\n\(sel)")
-            }
+            send(prompt: "请简要解释下面这段内容：\n\n\(sel)")
         }
+    }
+
+    private func flashHint(_ text: String) {
+        hintMessage = text
+        hintClearWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.hintMessage = nil }
+        hintClearWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
     }
 
     private func refreshSelectionIfNeeded() {
@@ -134,41 +146,58 @@ struct ConversationView: View {
 
 private struct ToolbarBar: View {
     let hasSelection: Bool
+    @EnvironmentObject var viewModel: ConversationViewModel
 
     var body: some View {
-        HStack(spacing: 0) {
-            DragHandle()
+        ZStack(alignment: .top) {
+            HStack(spacing: 0) {
+                DragHandle()
 
-            Image("Logo")
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: 22, height: 22)
-                .padding(.leading, 6)
-                .padding(.trailing, 8)
+                Image("Logo")
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 22, height: 22)
+                    .padding(.leading, 6)
+                    .padding(.trailing, 8)
 
-            ToolbarSeparator()
+                ToolbarSeparator()
 
-            ToolbarButton(icon: "character.book.closed", label: "翻译", action: .translate)
-            ToolbarButton(icon: "questionmark.circle", label: "解释", action: .explain)
-            ToolbarButton(icon: "doc.on.doc", label: "复制", action: .copy, disabled: !hasSelection)
+                ToolbarButton(icon: "character.book.closed", label: "翻译", action: .translate, disabled: !hasSelection)
+                ToolbarButton(icon: "questionmark.circle", label: "解释", action: .explain, disabled: !hasSelection)
+                ToolbarButton(icon: "doc.on.doc", label: "复制", action: .copy, disabled: !hasSelection)
 
-            ToolbarSeparator()
+                ToolbarSeparator()
 
-            CloseButton()
-                .padding(.horizontal, 8)
+                CloseButton()
+                    .padding(.horizontal, 8)
+            }
+            .frame(height: 40)
+            .padding(.horizontal, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
+
+            if let hint = viewModel.hintMessage {
+                Text(hint)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule().fill(Color.black.opacity(0.78))
+                    )
+                    .offset(y: -22)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .frame(height: 40)
-        .padding(.horizontal, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
+        .animation(.easeInOut(duration: 0.18), value: viewModel.hintMessage)
         .padding(8)  // 给阴影留出渲染空间
         .fixedSize()
     }
