@@ -8,6 +8,9 @@ final class FloatingPanel: NSPanel {
     private let viewModel = ConversationViewModel()
     private var cancellables = Set<AnyCancellable>()
     private var anchorPoint: NSPoint = .zero
+    /// 唤起前的前台 app。close 时主动激活它，避免 Inkling 进程残留 active
+    /// 状态把 systemWide AX focus 钉在自己身上——这是"第二次读不到选区"的根因。
+    private weak var previousApp: NSRunningApplication?
 
     /// SwiftUI 内部已经画了卡片+阴影，所以这里的尺寸要给阴影留 padding 空间。
     private static let toolbarSize = NSSize(width: 660, height: 56)
@@ -46,6 +49,12 @@ final class FloatingPanel: NSPanel {
 
     func present(at point: NSPoint, with selection: Selection) {
         anchorPoint = point
+        // 在 panel 显示之前记录前台 app，close 时用来把焦点还回去。
+        // 已经是 Inkling 自己（说明上次没让出 active）就不覆盖前一次记录。
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousApp = front
+        }
         viewModel.prepare(selection: selection, bridge: bridge, sessions: sessions)
         adjustFrame(for: viewModel.mode)
         orderFrontRegardless()
@@ -79,9 +88,11 @@ final class FloatingPanel: NSPanel {
 
     override func close() {
         viewModel.resetForClose()
-        // 主动让出 first responder，加速 systemWide AX focus 切回原 app，
-        // 否则下次唤起读 selection 会读到本浮窗的残留 element。
         makeFirstResponder(nil)
         super.close()
+        // 让原 app 重新成为前台。仅 makeFirstResponder/super.close 不够——
+        // 一旦 Inkling 进程被任何点击激活过，systemWide AX focus 就会一直钉在
+        // 自己身上。主动 activate 上一个 app 才能让 focus 切走。
+        previousApp?.activate(options: [])
     }
 }
