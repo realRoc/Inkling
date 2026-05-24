@@ -12,7 +12,14 @@ enum SelectionReader {
     ///   按 PID 直接读它的 focused element——这条路绕开 systemWide focus，即使 Inkling
     ///   把自己卡成前台（macOS 14+ 协作式激活下，deactivate 经常 no-op）也能拿到选区。
     static func currentSelection(for app: NSRunningApplication? = nil) -> Selection? {
-        if let app, let viaApp = readViaAccessibility(for: app) { return viaApp }
+        if let app, !app.isTerminated {
+            if let viaApp = readViaAccessibility(for: app) { return viaApp }
+            // 目标 app 与当前前台不一致时不能走 systemWide / pasteboard fallback：
+            // pasteboard 路径会 Cmd+C 给前台 app（很可能是 Inkling 自己），把面板
+            // TextField 或旧剪贴板内容误当成用户选区。前台一致时再回落，Cmd+C 才会发给目标 app。
+            let front = NSWorkspace.shared.frontmostApplication
+            guard front?.processIdentifier == app.processIdentifier else { return nil }
+        }
         if let viaAX = readViaAccessibility() { return viaAX }
         return readViaPasteboard()
     }

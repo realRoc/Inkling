@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 最近一次被激活的非自身 app。用 NSWorkspace 通知维护，这样即使 Inkling 自己
     /// 卡在前台（导致 frontmostApplication == self），我们仍知道用户原本在哪个 app。
     /// 唤起时优先把它作为读选区的目标——按 PID 走 AX，绕开 systemWide focus 的卡死。
-    private weak var lastUserApp: NSRunningApplication?
+    /// 用强引用：弱引用一旦被提前回收，fallback 路径会跳空。读取时再判 isTerminated。
+    private var lastUserApp: NSRunningApplication?
     private var activationObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -63,13 +64,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // 确定"读哪个 app 的选区"：当前前台 app（排除自身），否则用最近记录的非自身 app。
-        // 后者兜住"Inkling 卡前台导致 frontmostApplication 是自己"的情况。
+        // 后者兜住"Inkling 卡前台导致 frontmostApplication 是自己"的情况。lastUserApp 已退出的话
+        // 也别用——AX 已经查不到了。
         let targetApp: NSRunningApplication? = {
             if let front = NSWorkspace.shared.frontmostApplication,
                front.bundleIdentifier != Bundle.main.bundleIdentifier {
                 return front
             }
-            return lastUserApp
+            if let last = lastUserApp, !last.isTerminated {
+                return last
+            }
+            return nil
         }()
         // 有选区就带选区进来；没有也唤起一个空会话，让用户直接输入问题。
         let selection = SelectionReader.currentSelection(for: targetApp)

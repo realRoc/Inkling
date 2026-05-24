@@ -23,7 +23,8 @@ final class ConversationViewModel: ObservableObject {
     private(set) var currentSelection: String?
     /// 用户唤起 Inkling 之前所在的 app。后台 retry 用它按 PID 直接读 AX，避免依赖
     /// systemWide focus（panel 一旦被点击，systemWide 就指到 Inkling 自己了）。
-    private weak var targetApp: NSRunningApplication?
+    /// 用强引用：弱引用一旦被提前回收，retry 整轮就废了。resetForClose 会清掉。
+    private var targetApp: NSRunningApplication?
 
     var hasSelection: Bool { currentSelection != nil }
 

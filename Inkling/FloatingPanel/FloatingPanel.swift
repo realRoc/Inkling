@@ -10,7 +10,9 @@ final class FloatingPanel: NSPanel {
     private var anchorPoint: NSPoint = .zero
     /// 唤起前的前台 app。close 时主动激活它，避免 Inkling 进程残留 active
     /// 状态把 systemWide AX focus 钉在自己身上——这是"第二次读不到选区"的根因。
-    private weak var previousApp: NSRunningApplication?
+    /// 用强引用：弱引用一旦被提前回收，close 时 yieldActivation/activate 全部跳空，bug 复活。
+    /// close 用完后会被清掉，下次 present 再覆盖。
+    private var previousApp: NSRunningApplication?
     /// 点击浮窗外部自动关闭。全局 monitor 收不到自身进程的事件，
     /// 所以点 Inkling 内部按钮不会误触发。
     private var clickOutsideMonitor: Any?
@@ -118,7 +120,7 @@ final class FloatingPanel: NSPanel {
         // 让 Inkling 让出 active 状态。macOS 14 起协作激活：deprecated 的 NSApp.deactivate()
         // 在新系统上经常 no-op，必须显式 yieldActivation(to:)，previousApp.activate() 才能真正生效；
         // 否则 Inkling 会卡在前台，systemWide AX focus 一直钉在自己身上，下次唤起读不到选区。
-        if let prev = previousApp {
+        if let prev = previousApp, !prev.isTerminated {
             if #available(macOS 14.0, *) {
                 NSApp.yieldActivation(to: prev)
             } else {
@@ -128,5 +130,6 @@ final class FloatingPanel: NSPanel {
         } else {
             NSApp.deactivate()
         }
+        previousApp = nil
     }
 }
