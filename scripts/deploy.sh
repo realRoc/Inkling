@@ -75,7 +75,7 @@ fi
 BUILD_DIR="$REPO_ROOT/build-deploy"
 APP_PATH="$BUILD_DIR/Build/Products/Release/Inkling.app"
 
-step "xcodebuild Release（输出留在 $BUILD_DIR）"
+step "xcodebuild Release（输出留在 ${BUILD_DIR}）"
 set +e
 xcodebuild \
     -project Inkling.xcodeproj \
