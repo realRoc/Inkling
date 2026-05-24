@@ -6,9 +6,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: FloatingPanel?
     private let bridge = BridgeProcess()
     private let sessions = SessionManager()
+    /// 最近一次被激活的非自身 app。用 NSWorkspace 通知维护，这样即使 Inkling 自己
+    /// 卡在前台（导致 frontmostApplication == self），我们仍知道用户原本在哪个 app。
+    /// 唤起时优先把它作为读选区的目标——按 PID 走 AX，绕开 systemWide focus 的卡死。
+    /// 用强引用：弱引用一旦被提前回收，fallback 路径会跳空。读取时再判 isTerminated。
+    private var lastUserApp: NSRunningApplication?
+    private var activationObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menuBar = MenuBarController()
+
+        // 启动时如果当前前台已经是用户 app，先记一笔，省得首次唤起还要兜底。
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier != Bundle.main.bundleIdentifier {
+            lastUserApp = front
+        }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+            self?.lastUserApp = app
+        }
 
         // 默认快捷键 ⌘⇧Space。用 V2 迁移键覆盖之前默认的 ⌘⇧E 一次，之后用户改的就不再被覆盖。
         let defaultMigratedKey = "summonShortcutDefaultV2"
@@ -42,16 +63,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.close()
             return
         }
+        // 确定"读哪个 app 的选区"：当前前台 app（排除自身），否则用最近记录的非自身 app。
+        // 后者兜住"Inkling 卡前台导致 frontmostApplication 是自己"的情况。lastUserApp 已退出的话
+        // 也别用——AX 已经查不到了。
+        let targetApp: NSRunningApplication? = {
+            if let front = NSWorkspace.shared.frontmostApplication,
+               front.bundleIdentifier != Bundle.main.bundleIdentifier {
+                return front
+            }
+            if let last = lastUserApp, !last.isTerminated {
+                return last
+            }
+            return nil
+        }()
         // 有选区就带选区进来；没有也唤起一个空会话，让用户直接输入问题。
-        let selection = SelectionReader.currentSelection()
+        let selection = SelectionReader.currentSelection(for: targetApp)
             ?? Selection(text: "", sourceApp: nil)
-        present(selection: selection, at: CursorTracker.location())
+        present(selection: selection, at: CursorTracker.location(), targetApp: targetApp)
     }
 
-    private func present(selection: Selection, at point: NSPoint) {
+    private func present(selection: Selection, at point: NSPoint, targetApp: NSRunningApplication?) {
         let panel = panel ?? FloatingPanel(bridge: bridge, sessions: sessions)
         self.panel = panel
-        panel.present(at: point, with: selection)
+        panel.present(at: point, with: selection, targetApp: targetApp)
     }
 
     private func ensureAccessibilityPermission() {
