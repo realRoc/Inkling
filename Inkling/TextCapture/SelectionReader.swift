@@ -8,10 +8,19 @@ struct Selection {
 
 enum SelectionReader {
     /// 读取当前选中文本。
-    /// - Parameter app: 已知的目标 app（用户唤起 Inkling 之前所在的那个）。若提供，优先
-    ///   按 PID 直接读它的 focused element——这条路绕开 systemWide focus，即使 Inkling
-    ///   把自己卡成前台（macOS 14+ 协作式激活下，deactivate 经常 no-op）也能拿到选区。
-    static func currentSelection(for app: NSRunningApplication? = nil) -> Selection? {
+    /// - Parameters:
+    ///   - app: 已知的目标 app（用户唤起 Inkling 之前所在的那个）。若提供，优先
+    ///     按 PID 直接读它的 focused element——这条路绕开 systemWide focus，即使 Inkling
+    ///     把自己卡成前台（macOS 14+ 协作式激活下，deactivate 经常 no-op）也能拿到选区。
+    ///   - allowPasteboardFallback: 是否允许在 AX 全部失败后回落到 Cmd+C pasteboard 路径。
+    ///     pasteboard 路径会**真发** Cmd+C，主线程阻塞最多 ~0.9s（modifier 等待 + changeCount 轮询），
+    ///     并污染再恢复用户剪贴板。**只有用户显式触发**（快捷键召唤、点工具栏按钮、点返回按钮）
+    ///     时才允许；被动监听路径（全局 mouseUp watcher、toolbar hover）必须传 false，否则
+    ///     用户每次在源 app 松开鼠标都会被 Inkling 偷偷复制一次，打断他自己的 copy 行为且明显卡顿。
+    static func currentSelection(
+        for app: NSRunningApplication? = nil,
+        allowPasteboardFallback: Bool = true
+    ) -> Selection? {
         if let app, !app.isTerminated {
             if let viaApp = readViaAccessibility(for: app) { return viaApp }
             // 目标 app 与当前前台不一致时不能走 systemWide / pasteboard fallback：
@@ -21,6 +30,7 @@ enum SelectionReader {
             guard front?.processIdentifier == app.processIdentifier else { return nil }
         }
         if let viaAX = readViaAccessibility() { return viaAX }
+        guard allowPasteboardFallback else { return nil }
         return readViaPasteboard()
     }
 
