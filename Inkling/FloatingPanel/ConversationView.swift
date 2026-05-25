@@ -53,6 +53,32 @@ final class ConversationViewModel: ObservableObject {
         var text: String
     }
 
+    /// 用户在对话页点"返回"——结束当前 session、清空消息、回到工具栏。
+    /// 顺带刷新一次选区：等回复期间用户经常已经选了下一段要处理的文字。
+    func returnToToolbar() {
+        // 让排队中的旧 retry 在回写时认出自己过期
+        selectionRetryGeneration &+= 1
+        if let old = sessionId {
+            bridge?.endSession(old)
+        }
+        sessionId = sessions?.newSession()
+        messages = []
+        input = ""
+        isStreaming = false
+        hintMessage = nil
+        hintClearWorkItem?.cancel()
+        hintClearWorkItem = nil
+
+        // 立刻同步读一次；读不到再走后台 retry，避免按钮短暂灰一下
+        currentSelection = nil
+        if let selection = SelectionReader.currentSelection(for: targetApp) {
+            let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { currentSelection = text }
+        }
+        mode = .toolbar(selection: currentSelection)
+        if currentSelection == nil { retrySelectionInBackground() }
+    }
+
     /// 关闭浮窗时调用——把状态拉回初始 toolbar，避免下次唤起残留上轮对话。
     func resetForClose() {
         selectionRetryGeneration &+= 1
@@ -272,6 +298,28 @@ private struct ToolbarBar: View {
     }
 }
 
+private struct BackButton: View {
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(hovered ? .primary : .secondary)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(hovered ? Color.primary.opacity(0.08) : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help("返回")
+    }
+}
+
 private struct DragHandle: View {
     var body: some View {
         Image(systemName: "circle.grid.2x2.fill")
@@ -379,7 +427,7 @@ private struct ConversationCard: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            DragHandle()
+            BackButton { viewModel.returnToToolbar() }
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .medium))
             Text(title)
