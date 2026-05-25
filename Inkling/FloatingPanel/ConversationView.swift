@@ -199,19 +199,29 @@ final class ConversationViewModel: ObservableObject {
     func send(prompt: String) {
         guard let bridge, let sessionId else { return }
         messages.append(Message(role: .user, text: prompt))
-        messages.append(Message(role: .assistant, text: ""))
+        let assistantMessage = Message(role: .assistant, text: "")
+        let assistantId = assistantMessage.id
+        messages.append(assistantMessage)
         isStreaming = true
 
-        bridge.send(sessionId: sessionId, text: prompt) { [weak self] event in
+        // 捕获本次发送的 session 和目标气泡 id。returnToToolbar / resetForClose 会换掉
+        // self.sessionId 并清空 messages；endSession 又是异步入队，老回调可能晚到。
+        // 回调里按 (session, id) 双重校验，错会话或目标气泡已不存在就静默 no-op，
+        // 不再按 messages.count - 1 越界写入空数组。
+        let pendingSessionId = sessionId
+        bridge.send(sessionId: pendingSessionId, text: prompt) { [weak self] event in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self,
+                      self.sessionId == pendingSessionId,
+                      let idx = self.messages.firstIndex(where: { $0.id == assistantId })
+                else { return }
                 switch event {
                 case .delta(let chunk):
-                    self.messages[self.messages.count - 1].text += chunk
+                    self.messages[idx].text += chunk
                 case .done:
                     self.isStreaming = false
                 case .error(let msg):
-                    self.messages[self.messages.count - 1].text += "\n[error] \(msg)"
+                    self.messages[idx].text += "\n[error] \(msg)"
                     self.isStreaming = false
                 }
             }
