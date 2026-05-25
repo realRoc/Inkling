@@ -13,9 +13,6 @@ final class FloatingPanel: NSPanel {
     /// 用强引用：弱引用一旦被提前回收，close 时 yieldActivation/activate 全部跳空，bug 复活。
     /// close 用完后会被清掉，下次 present 再覆盖。
     private var previousApp: NSRunningApplication?
-    /// 点击浮窗外部自动关闭。全局 monitor 收不到自身进程的事件，
-    /// 所以点 Inkling 内部按钮不会误触发。
-    private var clickOutsideMonitor: Any?
 
     /// SwiftUI 内部已经画了卡片+阴影，所以这里的尺寸要给阴影留 padding 空间。
     private static let toolbarSize = NSSize(width: 660, height: 56)
@@ -65,25 +62,6 @@ final class FloatingPanel: NSPanel {
         viewModel.prepare(selection: selection, bridge: bridge, sessions: sessions, targetApp: previousApp)
         adjustFrame(for: viewModel.mode)
         orderFrontRegardless()
-        installClickOutsideMonitor()
-    }
-
-    private func installClickOutsideMonitor() {
-        removeClickOutsideMonitor()
-        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        ) { [weak self] _ in
-            guard let self else { return }
-            // global monitor 只收外部进程事件；点 Inkling 自身按钮不会触发这里
-            self.close()
-        }
-    }
-
-    private func removeClickOutsideMonitor() {
-        if let m = clickOutsideMonitor {
-            NSEvent.removeMonitor(m)
-            clickOutsideMonitor = nil
-        }
     }
 
     private func adjustFrame(for mode: ConversationViewModel.Mode) {
@@ -113,7 +91,6 @@ final class FloatingPanel: NSPanel {
     }
 
     override func close() {
-        removeClickOutsideMonitor()
         viewModel.resetForClose()
         makeFirstResponder(nil)
         super.close()
