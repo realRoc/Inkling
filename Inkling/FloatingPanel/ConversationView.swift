@@ -43,6 +43,10 @@ final class ConversationViewModel: ObservableObject {
     /// asyncAfter 在回写前发现自己已过期——避免"关闭后快速换 app 再唤起，旧 retry 把旧 app
     /// 的选区写进新会话"。
     private var selectionRetryGeneration: UInt64 = 0
+    /// toolbar 模式下挂的全局 mouseUp 监听 token。用户在原 app 里选完文字松手时刷一次选区——
+    /// 比 1.2s 的固定 retry 周期更贴近"用户刚刚选完"这个事件，覆盖"返回 toolbar 后过几秒才选字"
+    /// 的真实操作节奏。进入 conversation / resetForClose 时取消。
+    private var selectionEventMonitor: Any?
 
     var hasSelection: Bool { currentSelection != nil }
 
@@ -77,11 +81,13 @@ final class ConversationViewModel: ObservableObject {
         }
         mode = .toolbar(selection: currentSelection)
         if currentSelection == nil { retrySelectionInBackground() }
+        startSelectionWatcher()
     }
 
     /// 关闭浮窗时调用——把状态拉回初始 toolbar，避免下次唤起残留上轮对话。
     func resetForClose() {
         selectionRetryGeneration &+= 1
+        stopSelectionWatcher()
         if let old = sessionId {
             bridge?.endSession(old)
         }
@@ -122,6 +128,7 @@ final class ConversationViewModel: ObservableObject {
         if currentSelection == nil {
             retrySelectionInBackground()
         }
+        startSelectionWatcher()
     }
 
     private func retrySelectionInBackground() {
@@ -168,6 +175,9 @@ final class ConversationViewModel: ObservableObject {
             return
         }
 
+        // 进入 conversation 模式不需要再监听选区
+        stopSelectionWatcher()
+
         switch action {
         case .translate:
             mode = .conversation(title: "翻译", icon: "character.book.closed")
@@ -186,13 +196,36 @@ final class ConversationViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
     }
 
-    private func refreshSelectionIfNeeded() {
+    /// internal——给 ToolbarBar 在 hover 进入时做兜底刷新调用。
+    /// 只在没选区时尝试覆盖，已经亮着就直接放过，避免把用户已经认可的选区误清掉。
+    func refreshSelectionIfNeeded() {
         guard currentSelection == nil else { return }
         guard let selection = SelectionReader.currentSelection(for: targetApp) else { return }
         let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
             self.currentSelection = text
             self.mode = .toolbar(selection: text)  // 顺便刷新 UI 状态
+        }
+    }
+
+    /// 注册全局 mouseUp 监听——用户在原 app 里拖选完文字松手的瞬间触发一次选区刷新。
+    /// 走 addGlobalMonitorForEvents（不需要 Accessibility / Input Monitoring 权限），
+    /// 只覆盖鼠标选区；键盘选区（Shift+方向键等）由用户 hover 进 toolbar 时的兜底覆盖。
+    /// mouseUp → AX 更新有几十 ms 延迟，加 0.05s asyncAfter 给系统时间。
+    private func startSelectionWatcher() {
+        guard selectionEventMonitor == nil else { return }
+        selectionEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
+            guard let self else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.refreshSelectionIfNeeded()
+            }
+        }
+    }
+
+    private func stopSelectionWatcher() {
+        if let monitor = selectionEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            selectionEventMonitor = nil
         }
     }
 
@@ -305,6 +338,11 @@ private struct ToolbarBar: View {
         .animation(.easeInOut(duration: 0.18), value: viewModel.hintMessage)
         .padding(8)  // 给阴影留出渲染空间
         .fixedSize()
+        // 鼠标 hover 进 toolbar = 用户准备点按钮的瞬间，再兜一次。覆盖键盘选区
+        // (Shift+方向键 / Cmd+A) 和全局 mouseUp 监听漏掉的边界情况。
+        .onHover { entered in
+            if entered { viewModel.refreshSelectionIfNeeded() }
+        }
     }
 }
 
