@@ -198,9 +198,15 @@ final class ConversationViewModel: ObservableObject {
 
     /// internal——给 ToolbarBar 在 hover 进入时做兜底刷新调用。
     /// 只在没选区时尝试覆盖，已经亮着就直接放过，避免把用户已经认可的选区误清掉。
-    func refreshSelectionIfNeeded() {
+    /// - Parameter allowPasteboardFallback: 透传给 SelectionReader。被动路径（watcher / hover）
+    ///   必须传 false，否则用户每次在源 app 松开鼠标都会被 Inkling 偷偷 Cmd+C 一次，
+    ///   打断用户当前 copy 行为且主线程阻塞 ~0.9s。用户显式动作（runQuickAction）保持默认 true。
+    func refreshSelectionIfNeeded(allowPasteboardFallback: Bool = true) {
         guard currentSelection == nil else { return }
-        guard let selection = SelectionReader.currentSelection(for: targetApp) else { return }
+        guard let selection = SelectionReader.currentSelection(
+            for: targetApp,
+            allowPasteboardFallback: allowPasteboardFallback
+        ) else { return }
         let text = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
             self.currentSelection = text
@@ -212,12 +218,16 @@ final class ConversationViewModel: ObservableObject {
     /// 走 addGlobalMonitorForEvents（不需要 Accessibility / Input Monitoring 权限），
     /// 只覆盖鼠标选区；键盘选区（Shift+方向键等）由用户 hover 进 toolbar 时的兜底覆盖。
     /// mouseUp → AX 更新有几十 ms 延迟，加 0.05s asyncAfter 给系统时间。
+    ///
+    /// 关键：被动触发路径必须传 allowPasteboardFallback=false 给 refreshSelectionIfNeeded，
+    /// 不然 AX 失败时 SelectionReader 会发 Cmd+C 偷复制——用户每次普通点击都被 Inkling 抢一次
+    /// 剪贴板，体验灾难（codex review #8 blocker）。
     private func startSelectionWatcher() {
         guard selectionEventMonitor == nil else { return }
         selectionEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
             guard let self else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.refreshSelectionIfNeeded()
+                self?.refreshSelectionIfNeeded(allowPasteboardFallback: false)
             }
         }
     }
@@ -340,8 +350,10 @@ private struct ToolbarBar: View {
         .fixedSize()
         // 鼠标 hover 进 toolbar = 用户准备点按钮的瞬间，再兜一次。覆盖键盘选区
         // (Shift+方向键 / Cmd+A) 和全局 mouseUp 监听漏掉的边界情况。
+        // 同样禁掉 pasteboard fallback：hover 是被动事件，不能借此偷 Cmd+C；真要 fallback，
+        // 等用户点按钮时 runQuickAction → refreshSelectionIfNeeded() 默认 true 才允许。
         .onHover { entered in
-            if entered { viewModel.refreshSelectionIfNeeded() }
+            if entered { viewModel.refreshSelectionIfNeeded(allowPasteboardFallback: false) }
         }
     }
 }
